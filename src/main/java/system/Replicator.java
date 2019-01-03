@@ -5,8 +5,10 @@ import util.Constants;
 import util.Util;
 
 import java.io.DataInputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.ConnectException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.ByteBuffer;
@@ -23,51 +25,49 @@ public class Replicator extends Thread {
   private final String replicatorId;
   private final Integer replicatorPort;
   private final RocksDB replicatorDb;
-  private final Path offsetFilePath;
 
-  public Replicator(String replicatorId, Integer replicatorPort, RocksDB replicatorDb, String replicatorDbBasePath) {
+  public Replicator(String replicatorId, Integer replicatorPort, RocksDB replicatorDb) {
     this.replicatorId = replicatorId;
     this.replicatorPort = replicatorPort;
     this.replicatorDb = replicatorDb;
-    this.offsetFilePath = Paths.get(replicatorDbBasePath + "/" + replicatorId + "/OFFSET");
   }
 
   public void run() {
     LOGGER.info("Replicator {} is now running.", replicatorId);
-    Processor processor = null;
+    ConnectionHandler connectionHandler = null;
     try (ServerSocket serverSocket = new ServerSocket(replicatorPort)) {
       while (!Thread.currentThread().isInterrupted()) {
         Socket socket = serverSocket.accept();
-        processor = new Processor(replicatorId, socket, replicatorDb, offsetFilePath);
-        processor.start();
+        connectionHandler = new ConnectionHandler(replicatorId, socket, replicatorDb);
+        connectionHandler.start();
       }
       LOGGER.error("Exiting connection accept loop in Replicator " + replicatorId);
     } catch (Exception e) {
       LOGGER.error("Error creating socket connection in Replicator " + replicatorId, e);
     } finally {
       try {
-        if (processor != null) {
-          processor.join(1000);
+        if (connectionHandler != null) {
+          connectionHandler.join(1000);
         }
       } catch (Exception e) {
-        LOGGER.error("Timeout shutting down processor in Replicator " + replicatorId, e);
+        LOGGER.error("Timeout shutting down connection handler in Replicator " + replicatorId, e);
       }
     }
   }
 
-  private static class Processor extends Thread {
+  private static class ConnectionHandler extends Thread {
     private final FlushOptions flushOptions = new FlushOptions().setWaitForFlush(true);
     private final String replicatorId;
     private final Socket socket;
     private final RocksDB db;
     private final Path offsetFilePath;
 
-    Processor(String replicatorId, Socket socket, RocksDB db, Path offsetFilePath) {
+    ConnectionHandler(String replicatorId, Socket socket, RocksDB db) {
       super();
       this.replicatorId = replicatorId;
       this.socket = socket;
       this.db = db;
-      this.offsetFilePath = offsetFilePath;
+      this.offsetFilePath = Constants.getReplicatorOffsetFile(replicatorId);
     }
 
     @Override
@@ -95,8 +95,10 @@ public class Replicator extends Thread {
               throw new UnsupportedOperationException("Unknown opCode: " + Ints.fromByteArray(opCode) + " in Replicator " + replicatorId);
           }
         }
+      } catch (EOFException e) {
+        LOGGER.error("Shutting down connection handler in Replicator " + replicatorId);
       } catch (Exception e) {
-        LOGGER.error("Processor Error. Shutting down thread in Replicator " + replicatorId, e);
+        LOGGER.error("Shutting down connection handler in Replicator " + replicatorId, e);
       } finally {
         try {
           socket.close();

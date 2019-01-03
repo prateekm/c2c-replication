@@ -26,7 +26,7 @@ public class Producer {
   private final RocksDB producerDb;
   private final Integer firstReplicaPort;
   private final Integer secondReplicaPort;
-  private int lastOffset = 1; // TODO: must match default value in offset file
+  private int lastOffset = 1; // Note: must match default value for an offset if no offset file found
 
   private final AtomicInteger firstReplicaPendingCommit = new AtomicInteger();
   private final AtomicInteger secondReplicaPendingCommit = new AtomicInteger();
@@ -108,7 +108,7 @@ public class Producer {
             LOGGER.info("Connected to {}:{} from Producer {}", Constants.SERVER_HOST, replicaPort, producerId);
             replicate(socket); // blocks
           } catch (Exception ce) {
-            LOGGER.info("Retrying connection from Producer {}. Socket status: " + socket.toString(), producerId, ce);
+            LOGGER.info("Retrying connection from Producer {}. Socket status: " + socket.toString(), producerId);
             socket = new Socket();
             Thread.sleep(1000);
           }

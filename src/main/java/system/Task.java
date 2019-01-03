@@ -6,7 +6,6 @@ import util.Util;
 
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.RocksDB;
 import org.slf4j.Logger;
@@ -24,11 +23,11 @@ public class Task extends Thread {
 
   private int messageId; // incrementing messageId
 
-  public Task(Integer taskId, RocksDB taskDb, Producer producer, String taskDbBasePath) {
+  public Task(Integer taskId, RocksDB taskDb, Producer producer) {
     this.taskId = taskId;
     this.taskDb = taskDb;
     this.producer = producer;
-    this.commitFilePath = Paths.get(taskDbBasePath + "/" + taskId + "/MESSAGE_ID");
+    this.commitFilePath = Constants.getTaskOffsetFile(taskId);
 
     // contains the last committed messageId (not offset)
     this.messageId = Ints.fromByteArray(Util.readFile(commitFilePath));

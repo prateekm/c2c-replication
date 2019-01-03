@@ -39,6 +39,7 @@ public class Util {
   }
 
   public static void writeFile(Path filePath, byte[] content) throws Exception {
+    Files.createDirectories(filePath.getParent());
     Files.write(
         filePath,
         content,
