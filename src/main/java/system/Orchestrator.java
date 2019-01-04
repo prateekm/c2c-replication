@@ -290,6 +290,5 @@ public class Orchestrator {
   }
 
   // TODO NOTE: must gradle build first
-  private static final String CMD = "java -Dfile.encoding=UTF-8 -classpath /Users/pmaheshw/code/personal/c2c-replication/build/libs/c2c-replication-0.1.jar system.Container";
-
+  private static final String CMD = "java -Dfile.encoding=UTF-8 -classpath build/libs/c2c-replication-0.1.jar system.Container";
 }
