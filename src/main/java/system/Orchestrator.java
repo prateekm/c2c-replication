@@ -3,6 +3,8 @@ package system;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 import com.google.common.util.concurrent.Uninterruptibles;
+import joptsimple.OptionParser;
+import joptsimple.OptionSet;
 import util.Constants;
 import util.Util;
 
@@ -25,7 +27,7 @@ import org.zeroturnaround.exec.ProcessExecutor;
 import org.zeroturnaround.exec.StartedProcess;
 import org.zeroturnaround.exec.stream.slf4j.Slf4jStream;
 
-// TODO NOTE: must gradle build first
+// NOTE: If running from IDE, must gradle build first
 public class Orchestrator {
   static {
     System.setProperty(SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "INFO");
@@ -36,30 +38,55 @@ public class Orchestrator {
   }
 
   private static final Logger LOGGER = LoggerFactory.getLogger(Orchestrator.class);
-  private static final ExecutorService EXECUTOR_SERVICE = Executors.newFixedThreadPool(3);
-  private static final int NUM_PROCESSES = 3;
-  private static final long TOTAL_RUNTIME_SECONDS = 300;
-  private static final int MAX_RUNTIME_SECONDS = 30;
-  private static final int MIN_RUNTIME_SECONDS = 10;
-  private static final int MIN_INTERVAL_BETWEEN_RESTART_SECONDS = 5; // required to allow rocksdb locks to be released
 
   public static void main(String[] args) throws Exception {
-    failuresWithoutHostAffinity();
-    failuresWithHostAffinity();
+    setConfiguration(args);
+    simulateFailuresWithoutHostAffinity();
+    simulateFailuresWithHostAffinity();
     verifyState();
   }
 
-  private static void failuresWithHostAffinity() {
-    long finishTimeMs = System.currentTimeMillis() + Duration.ofSeconds(TOTAL_RUNTIME_SECONDS).toMillis();
+  private static void setConfiguration(String[] args) {
+    OptionParser parser = new OptionParser();
+    parser.accepts("total-runtime").withOptionalArg().ofType(Integer.class);
+    parser.accepts("max-runtime").withOptionalArg().ofType(Integer.class);
+    parser.accepts("min-runtime").withOptionalArg().ofType(Integer.class);
+    parser.accepts("interval").withOptionalArg().ofType(Integer.class);
 
-    for (int i = 0; i < NUM_PROCESSES; i++) {
+    OptionSet options = parser.parse(args);
+    if (options.hasArgument("total-runtime")) {
+      Constants.Orchestrator.TOTAL_RUNTIME_SECONDS = (int) options.valueOf("total-runtime");
+    }
+    if (options.hasArgument("max-runtime")) {
+      Constants.Orchestrator.MAX_RUNTIME_SECONDS = (int) options.valueOf("max-runtime");
+    }
+    if (options.hasArgument("min-runtime")) {
+      Constants.Orchestrator.MIN_RUNTIME_SECONDS = (int) options.valueOf("min-runtime");
+    }
+    if (options.hasArgument("interval")) {
+      Constants.Orchestrator.INTERVAL_BETWEEN_RESTART_SECONDS = (int) options.valueOf("interval");
+    }
+
+    LOGGER.info("Configuration: \nTotal Runtime: {} \nMax Runtime: {} \nMin Runtime: {} \nInterval Between Restarts: {}",
+        Constants.Orchestrator.TOTAL_RUNTIME_SECONDS, Constants.Orchestrator.MAX_RUNTIME_SECONDS,
+        Constants.Orchestrator.MIN_RUNTIME_SECONDS, Constants.Orchestrator.INTERVAL_BETWEEN_RESTART_SECONDS
+    );
+  }
+
+  private static void simulateFailuresWithHostAffinity() {
+    ExecutorService executorService = Executors.newFixedThreadPool(3);
+    long finishTimeMs = System.currentTimeMillis() + Duration.ofSeconds(Constants.Orchestrator.TOTAL_RUNTIME_SECONDS).toMillis() / 2;
+
+    for (int i = 0; i < Constants.Orchestrator.NUM_PROCESSES; i++) {
       final int id = i;
-      EXECUTOR_SERVICE.submit(() -> {
+      executorService.submit(() -> {
         try {
           while (!Thread.currentThread().isInterrupted()) {
             try {
               int remainingTimeInSeconds =  Math.max((int) (finishTimeMs - System.currentTimeMillis()) / 1000, 0);
-              int runtimeInSeconds = Math.min((MIN_RUNTIME_SECONDS + Constants.RANDOM.nextInt(MAX_RUNTIME_SECONDS - MIN_RUNTIME_SECONDS)), remainingTimeInSeconds) + 1;
+              int runtimeInSeconds = Math.min((Constants.Orchestrator.MIN_RUNTIME_SECONDS +
+                  Constants.Common.RANDOM.nextInt(Constants.Orchestrator.MAX_RUNTIME_SECONDS -
+                      Constants.Orchestrator.MIN_RUNTIME_SECONDS)), remainingTimeInSeconds) + 1;
               if (runtimeInSeconds <= 0) throw new RuntimeException();
               LOGGER.info("Starting process " + id + " with runtime " + runtimeInSeconds);
               new ProcessExecutor().command((CMD + " " + id).split("\\s+")) // args must be provided separately from cmd
@@ -75,7 +102,7 @@ public class Orchestrator {
             } catch (Exception e) {
               LOGGER.error("Unexpected error for process " + id, e);
             }
-            Uninterruptibles.sleepUninterruptibly(MIN_INTERVAL_BETWEEN_RESTART_SECONDS, TimeUnit.SECONDS);
+            Uninterruptibles.sleepUninterruptibly(Constants.Orchestrator.INTERVAL_BETWEEN_RESTART_SECONDS, TimeUnit.SECONDS);
           }
           LOGGER.info("Shutting down launcher thread for process " + id);
         } catch (Exception e) {
@@ -83,17 +110,17 @@ public class Orchestrator {
         }
       });
     }
-    Uninterruptibles.sleepUninterruptibly(TOTAL_RUNTIME_SECONDS, TimeUnit.SECONDS);
+    Uninterruptibles.sleepUninterruptibly(Constants.Orchestrator.TOTAL_RUNTIME_SECONDS / 2, TimeUnit.SECONDS);
     LOGGER.info("Shutting down executor service.");
-    EXECUTOR_SERVICE.shutdownNow();
-    Uninterruptibles.sleepUninterruptibly(MAX_RUNTIME_SECONDS, TimeUnit.SECONDS); // let running processes die.
+    executorService.shutdownNow();
+    Uninterruptibles.sleepUninterruptibly(Constants.Orchestrator.MAX_RUNTIME_SECONDS, TimeUnit.SECONDS); // let running processes die.
     LOGGER.info("Shut down process execution.");
   }
 
-  private static void failuresWithoutHostAffinity() throws Exception {
-    StartedProcess[] processes = new StartedProcess[NUM_PROCESSES];
+  private static void simulateFailuresWithoutHostAffinity() throws Exception {
+    StartedProcess[] processes = new StartedProcess[Constants.Orchestrator.NUM_PROCESSES];
 
-    for (int id = 0; id < NUM_PROCESSES; id++) {
+    for (int id = 0; id < Constants.Orchestrator.NUM_PROCESSES; id++) {
       try {
         LOGGER.info("Starting process " + id);
         startProcess(processes, id);
@@ -102,9 +129,9 @@ public class Orchestrator {
       }
     }
 
-    long endTime = System.currentTimeMillis() + TOTAL_RUNTIME_SECONDS * 1000;
+    long endTime = System.currentTimeMillis() + Constants.Orchestrator.TOTAL_RUNTIME_SECONDS * 1000 / 2;
     while (!Thread.currentThread().isInterrupted() && System.currentTimeMillis() < endTime) {
-      Thread.sleep(MIN_RUNTIME_SECONDS * 1000);
+      Thread.sleep(Constants.Orchestrator.MIN_RUNTIME_SECONDS * 1000);
       nextTransition(processes);
     }
 
@@ -116,24 +143,24 @@ public class Orchestrator {
   }
 
   private static void nextTransition(StartedProcess[] processes) throws Exception {
-    int operation = Constants.RANDOM.nextInt(4);
+    int operation = Constants.Common.RANDOM.nextInt(4);
     waitUntilProcessesStable();
     switch (operation) {
       case 0: { // kill random producer
-        int pid = Constants.RANDOM.nextInt(NUM_PROCESSES);
+        int pid = Constants.Common.RANDOM.nextInt(Constants.Orchestrator.NUM_PROCESSES);
         LOGGER.info("Next transition: kill producer {}", pid);
         killProducer(processes, pid);
         break;
       }
       case 1: { // kill random replicator
-        int pid = Constants.RANDOM.nextInt(NUM_PROCESSES);
-        String rid = pid + "" + Constants.RANDOM.nextInt(2);
+        int pid = Constants.Common.RANDOM.nextInt(Constants.Orchestrator.NUM_PROCESSES);
+        String rid = pid + "" + Constants.Common.RANDOM.nextInt(2);
         LOGGER.info("Next transition: kill replicator {}", rid);
         killReplicator(processes, rid);
         break;
       }
       case 2: { // kill both replicators for a producer
-        int pid = Constants.RANDOM.nextInt(NUM_PROCESSES);
+        int pid = Constants.Common.RANDOM.nextInt(Constants.Orchestrator.NUM_PROCESSES);
         String rid0 = pid + "" + 0;
         String rid1 = pid + "" + 1;
         LOGGER.info("Next transition: kill both replicators for pid {}", pid);
@@ -142,7 +169,7 @@ public class Orchestrator {
         break;
       }
       case 3: { // kill both replicators and bounce producer (simulates Replica then Producer failure)
-        int pid = Constants.RANDOM.nextInt(NUM_PROCESSES);
+        int pid = Constants.Common.RANDOM.nextInt(Constants.Orchestrator.NUM_PROCESSES);
         LOGGER.info("Next transition: kill both replicators and bounce producer for pid {}", pid);
         String rid0 = pid + "" + 0;
         String rid1 = pid + "" + 1;
@@ -167,7 +194,7 @@ public class Orchestrator {
     LOGGER.debug("Killing producer: {}", pid);
     stopProcess(processes, pid);
     clearProducerState(pid);
-    String rid = pid + "" + Constants.RANDOM.nextInt(2); // randomly choose a replicator
+    String rid = pid + "" + Constants.Common.RANDOM.nextInt(2); // randomly choose a replicator
     int replicatorPid = getReplicatorPid(rid);
     stopProcess(processes, replicatorPid);
     clearReplicatorState(rid);
@@ -176,7 +203,7 @@ public class Orchestrator {
   }
 
   private static int getReplicatorPid(String rid) {
-    return Constants.JOB_MODEL.replicators.get(rid).left;
+    return Constants.Common.JOB_MODEL.replicators.get(rid).left;
   }
 
   private static void startProcess(StartedProcess[] processes, int id) throws IOException {
@@ -203,16 +230,16 @@ public class Orchestrator {
 
   private static void clearProducerState(int id) throws IOException {
     LOGGER.debug("Clearing state for producer: {}", id);
-    String producerStoreDir = Constants.PRODUCER_STORE_BASE_PATH + "/" + id;
+    String producerStoreDir = Constants.Common.PRODUCER_STORE_BASE_PATH + "/" + id;
     Util.rmrf(producerStoreDir);
   }
 
   private static void clearReplicatorState(String rid) throws IOException {
     LOGGER.debug("Clearing state for replicator: {}", rid);
-    String replicatorStoreDir = Constants.REPLICATOR_STORE_BASE_PATH + "/" + rid;
+    String replicatorStoreDir = Constants.Common.REPLICATOR_STORE_BASE_PATH + "/" + rid;
     try {
       Util.rmrf(replicatorStoreDir);
-      Files.deleteIfExists(Constants.getReplicatorOffsetFile(rid));
+      Files.deleteIfExists(Constants.Common.getReplicatorOffsetFilePath(rid));
     } catch (Exception e) {
       LOGGER.warn("Error clearing replicator state. Continuing.", e);
     }
@@ -227,7 +254,7 @@ public class Orchestrator {
       for (int p = 0; p < 3; p++) {
         for (int r = 0; r < 2; r++) {
           String rid = p + "" + r;
-          if (!Files.exists(Constants.getReplicatorOffsetFile(rid))) {
+          if (!Files.exists(Constants.Common.getReplicatorOffsetFilePath(rid))) {
             LOGGER.debug("Offset file does not exist yet for Replicator: {}", rid);
             allExist = false;
           }
@@ -252,13 +279,13 @@ public class Orchestrator {
 
   private static void verifyState(int taskId) throws RocksDBException {
     Options dbOptions = new Options().setCreateIfMissing(true);
-    RocksDB taskDb = RocksDB.open(dbOptions, Constants.TASK_STORE_BASE_PATH + "/" + taskId);
-    RocksDB replicator0Db = RocksDB.open(dbOptions, Constants.REPLICATOR_STORE_BASE_PATH + "/" + taskId + "0");
-    RocksDB replicator1Db = RocksDB.open(dbOptions, Constants.REPLICATOR_STORE_BASE_PATH + "/" + taskId + "1");
+    RocksDB taskDb = RocksDB.open(dbOptions, Constants.Common.TASK_STORE_BASE_PATH + "/" + taskId);
+    RocksDB replicator0Db = RocksDB.open(dbOptions, Constants.Common.REPLICATOR_STORE_BASE_PATH + "/" + taskId + "0");
+    RocksDB replicator1Db = RocksDB.open(dbOptions, Constants.Common.REPLICATOR_STORE_BASE_PATH + "/" + taskId + "1");
     RocksIterator taskDbIterator = taskDb.newIterator();
     taskDbIterator.seekToFirst();
 
-    byte[] lastCommittedMessageId = Util.readFile(Constants.getTaskOffsetFile(taskId));
+    byte[] lastCommittedMessageId = Util.readFile(Constants.Common.getTaskOffsetFilePath(taskId));
     int messageId = Ints.fromByteArray(lastCommittedMessageId);
     LOGGER.info("Last committed message id: {} for task: {}", messageId, taskId);
     int maxValidKey = messageId * taskId + messageId;
@@ -289,6 +316,6 @@ public class Orchestrator {
     LOGGER.info("Verified {} keys for task: {}", verifiedKeys, taskId);
   }
 
-  // TODO NOTE: must gradle build first
+  // NOTE: If running from IDE, must gradle build first
   private static final String CMD = "java -Dfile.encoding=UTF-8 -classpath build/libs/c2c-replication-0.1.jar system.Container";
 }

@@ -1,0 +1,3 @@
+Execution:
+gradle clean (optional, clears previous state)
+gradle run -Pargs='--total-runtime 600 --max-runtime 60 --min-runtime 30 --interval 5'

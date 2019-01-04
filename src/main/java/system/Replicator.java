@@ -14,8 +14,6 @@ import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import org.rocksdb.FlushOptions;
-import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.slf4j.Logger;
@@ -48,10 +46,11 @@ public class Replicator extends Thread {
 
   private static class ConnectionHandler extends Thread {
     private static final Logger LOGGER = LoggerFactory.getLogger(ConnectionHandler.class);
-    private final FlushOptions flushOptions = new FlushOptions().setWaitForFlush(true);
+
     private final String replicatorId;
     private final Socket socket;
     private final Path offsetFilePath;
+
     private RocksDB replicatorDb;
 
     ConnectionHandler(String replicatorId, Socket socket) throws Exception {
@@ -59,7 +58,7 @@ public class Replicator extends Thread {
       this.replicatorId = replicatorId;
       this.socket = socket;
       this.replicatorDb = createReplicatorDb(replicatorId);
-      this.offsetFilePath = Constants.getReplicatorOffsetFile(replicatorId);
+      this.offsetFilePath = Constants.Common.getReplicatorOffsetFilePath(replicatorId);
     }
 
     @Override
@@ -74,16 +73,16 @@ public class Replicator extends Thread {
           inputStream.readFully(opCode);
 
           switch (Ints.fromByteArray(opCode)) {
-            case Constants.OPCODE_LCO_INT:
+            case Constants.Common.OPCODE_LCO_INT:
               handleLCO(outputStream);
               break;
-            case Constants.OPCODE_WRITE_INT:
+            case Constants.Common.OPCODE_WRITE_INT:
               handleWrite(inputStream);
               break;
-            case Constants.OPCODE_COMMIT_INT:
+            case Constants.Common.OPCODE_COMMIT_INT:
               handleCommit(inputStream, outputStream);
               break;
-            case Constants.OPCODE_DELETE_INT:
+            case Constants.Common.OPCODE_DELETE_INT:
               handleDelete(outputStream);
               break;
             default:
@@ -109,7 +108,7 @@ public class Replicator extends Thread {
       LOGGER.debug("Received sync request in Replicator: {}", replicatorId);
       byte[] offset = Util.readFile(offsetFilePath);
       LOGGER.debug("Requesting sync from offset: {} in Replicator: {}", Ints.fromByteArray(offset), replicatorId);
-      response.putInt(Constants.OPCODE_LCO_INT);
+      response.putInt(Constants.Common.OPCODE_LCO_INT);
       response.put(offset);
       response.flip();
       outputStream.write(response.array());
@@ -132,11 +131,11 @@ public class Replicator extends Thread {
       inputStream.readFully(offset);
       LOGGER.debug("Received commit request for offset: {} in Replicator: {}", Ints.fromByteArray(offset), replicatorId);
 
-      replicatorDb.flush(flushOptions);
+      replicatorDb.flush(Constants.Common.FLUSH_OPTIONS);
       Util.writeFile(offsetFilePath, offset);
       LOGGER.debug("Acknowledging commit request for offset: {} in Replicator: {}", replicatorId, Ints.fromByteArray(offset));
       ByteBuffer response = ByteBuffer.allocate(4 + 4);
-      response.putInt(Constants.OPCODE_COMMIT_INT);
+      response.putInt(Constants.Common.OPCODE_COMMIT_INT);
       response.put(offset);
       response.flip();
       outputStream.write(response.array());
@@ -148,8 +147,8 @@ public class Replicator extends Thread {
 
       if (replicatorDb.isOwningHandle()) replicatorDb.close();
       try {
-        Files.deleteIfExists(Constants.getReplicatorOffsetFile(replicatorId));
-        Util.rmrf(Constants.REPLICATOR_STORE_BASE_PATH + "/" + replicatorId);
+        Files.deleteIfExists(Constants.Common.getReplicatorOffsetFilePath(replicatorId));
+        Util.rmrf(Constants.Common.REPLICATOR_STORE_BASE_PATH + "/" + replicatorId);
       } catch (Exception e) {
         LOGGER.warn("Error handling replicator delete. Continuing.", e);
       }
@@ -158,15 +157,14 @@ public class Replicator extends Thread {
 
       LOGGER.info("Acknowledging delete request in Replicator: {}", replicatorId);
       ByteBuffer response = ByteBuffer.allocate(4);
-      response.putInt(Constants.OPCODE_DELETE_INT);
+      response.putInt(Constants.Common.OPCODE_DELETE_INT);
       response.flip();
       outputStream.write(response.array());
       outputStream.flush();
     }
 
     private static RocksDB createReplicatorDb(String replicatorId) throws Exception {
-      Options dbOptions = new Options().setCreateIfMissing(true);
-      return RocksDB.open(dbOptions, Constants.REPLICATOR_STORE_BASE_PATH + "/" + replicatorId);
+      return RocksDB.open(Constants.Common.DB_OPTIONS, Constants.Common.REPLICATOR_STORE_BASE_PATH + "/" + replicatorId);
     }
   }
 }

@@ -6,15 +6,12 @@ import util.Util;
 
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
-import org.rocksdb.FlushOptions;
 import org.rocksdb.RocksDB;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class Task extends Thread {
   private static final Logger LOGGER = LoggerFactory.getLogger(Task.class);
-  private static final FlushOptions FLUSH_OPTIONS = new FlushOptions().setWaitForFlush(true);
-  private static final int COMMIT_INTERVAL = 10000;
 
   private final Integer taskId;
   private final RocksDB taskDb;
@@ -27,7 +24,7 @@ public class Task extends Thread {
     this.taskId = taskId;
     this.taskDb = taskDb;
     this.producer = producer;
-    this.commitFilePath = Constants.getTaskOffsetFile(taskId);
+    this.commitFilePath = Constants.Common.getTaskOffsetFilePath(taskId);
 
     // contains the last committed messageId (not offset)
     this.messageId = Ints.fromByteArray(Util.readFile(commitFilePath));
@@ -40,7 +37,9 @@ public class Task extends Thread {
 
     try {
       while(!Thread.currentThread().isInterrupted()) {
-        Thread.sleep(1);
+        if (Constants.Task.TASK_SLEEP_MS > 0) {
+          Thread.sleep(Constants.Task.TASK_SLEEP_MS);
+        }
 
         int data = messageId * taskId + messageId;
         ByteBuffer.wrap(key).putInt(data); // different key pattern per task.
@@ -48,10 +47,10 @@ public class Task extends Thread {
         taskDb.put(key, value);
 
         producer.send(key, value);
-        if (messageId % COMMIT_INTERVAL == 0) {
+        if (messageId % Constants.Task.COMMIT_INTERVAL == 0) {
           LOGGER.debug("Requesting Producer commit for messageId: {} in Task: {}.", messageId, taskId);
           producer.commit();
-          taskDb.flush(FLUSH_OPTIONS);
+          taskDb.flush(Constants.Common.FLUSH_OPTIONS);
           Util.writeFile(commitFilePath, Ints.toByteArray(messageId));
         }
         messageId++;

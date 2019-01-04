@@ -8,7 +8,6 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,26 +34,25 @@ public class Container {
       System.exit(1);
     });
 
-    Files.createDirectories(Paths.get(Constants.TASK_STORE_BASE_PATH));
-    Files.createDirectories(Paths.get(Constants.PRODUCER_STORE_BASE_PATH));
-    Files.createDirectories(Paths.get(Constants.REPLICATOR_STORE_BASE_PATH));
+    Files.createDirectories(Paths.get(Constants.Common.TASK_STORE_BASE_PATH));
+    Files.createDirectories(Paths.get(Constants.Common.PRODUCER_STORE_BASE_PATH));
+    Files.createDirectories(Paths.get(Constants.Common.REPLICATOR_STORE_BASE_PATH));
 
     int containerId = Integer.valueOf(args[0]);
-    ContainerModel containerModel = Constants.JOB_MODEL.getContainerModel(containerId);
+    ContainerModel containerModel = Constants.Common.JOB_MODEL.getContainerModel(containerId);
     LOGGER.info("Container: {} is starting with {}",  containerId, containerModel);
     Integer taskId = containerModel.getTaskId();
 
     try {
       RocksDB.loadLibrary();
-      Options dbOptions = new Options().setCreateIfMissing(true);
-      RocksDB taskDb = RocksDB.open(dbOptions, Constants.TASK_STORE_BASE_PATH + "/" + taskId);
-      RocksDB producerDb = RocksDB.open(dbOptions, Constants.PRODUCER_STORE_BASE_PATH + "/" + taskId);
+      RocksDB taskDb = RocksDB.open(Constants.Common.DB_OPTIONS, Constants.Common.TASK_STORE_BASE_PATH + "/" + taskId);
+      RocksDB producerDb = RocksDB.open(Constants.Common.DB_OPTIONS, Constants.Common.PRODUCER_STORE_BASE_PATH + "/" + taskId);
 
       Producer producer = new Producer(taskId, producerDb, taskDb); // producer id == task id
       Task task = new Task(taskId, taskDb, producer);
 
       List<Replicator> replicators = new ArrayList<>();
-      for (Map.Entry<String, Pair<Integer, Integer>> entry: Constants.JOB_MODEL.getReplicators().entrySet()) {
+      for (Map.Entry<String, Pair<Integer, Integer>> entry: Constants.Common.JOB_MODEL.getReplicators().entrySet()) {
         if (entry.getValue().left.equals(taskId)) {
           String replicatorId = entry.getKey();
           Integer replicatorPort = entry.getValue().right;

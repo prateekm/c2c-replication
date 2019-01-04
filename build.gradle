@@ -1,6 +1,6 @@
 apply plugin: 'java'
 apply plugin: 'idea'
-group 'system'
+group 'c2c-replication'
 version '0.1'
 
 repositories {
@@ -16,15 +16,12 @@ idea {
 
 dependencies {
     compile 'com.google.guava:guava:27.0.1-jre'
-
     compile 'io.dropwizard.metrics:metrics-core:4.0.3'
     compile 'io.dropwizard.metrics:metrics-jmx:4.0.3'
-
+    compile 'net.sf.jopt-simple:jopt-simple:5.0.4'
     compile 'org.rocksdb:rocksdbjni:5.5.1'
-
     compile 'org.slf4j:slf4j-api:1.7.2'
     compile 'org.slf4j:slf4j-simple:1.7.2'
-
     compile 'org.zeroturnaround:zt-exec:1.10'
 }
 
@@ -48,4 +45,7 @@ jar {
 task(run, dependsOn: 'build', type: JavaExec) {
     main = 'system.Orchestrator'
     classpath = sourceSets.main.runtimeClasspath
+    if (project.hasProperty('args')){
+        args project.args.split('\\s+')
+    }
 }
