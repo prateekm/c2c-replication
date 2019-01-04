@@ -29,15 +29,19 @@ public class Container {
   private final Producer producer;
   private final List<Replicator> replicators;
 
-
   public static void main(String[] args) throws Exception {
+    Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+      LOGGER.error("Uncaught exception in Thread: {}. Prematurely exiting process.", t.getName(), e);
+      System.exit(1);
+    });
+
     Files.createDirectories(Paths.get(Constants.TASK_STORE_BASE_PATH));
     Files.createDirectories(Paths.get(Constants.PRODUCER_STORE_BASE_PATH));
     Files.createDirectories(Paths.get(Constants.REPLICATOR_STORE_BASE_PATH));
 
     int containerId = Integer.valueOf(args[0]);
     ContainerModel containerModel = Constants.JOB_MODEL.getContainerModel(containerId);
-    LOGGER.info("Container: {} is starting with model: {}",  containerId, containerModel);
+    LOGGER.info("Container: {} is starting with {}",  containerId, containerModel);
     Integer taskId = containerModel.getTaskId();
 
     try {
@@ -61,7 +65,7 @@ public class Container {
       Container container = new Container(task, producer, replicators);
       container.start();
     } catch (Exception e) {
-      LOGGER.error("Error starting container.", e);
+      LOGGER.error("Error starting container. Prematurely exiting process.", e);
     }
   }
 

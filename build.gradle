@@ -2,7 +2,6 @@ apply plugin: 'java'
 apply plugin: 'idea'
 group 'system'
 version '0.1'
-sourceCompatibility = 1.8
 
 repositories {
     mavenCentral()
@@ -21,10 +20,6 @@ dependencies {
     compile 'io.dropwizard.metrics:metrics-core:4.0.3'
     compile 'io.dropwizard.metrics:metrics-jmx:4.0.3'
 
-    compile 'io.prometheus:simpleclient:0.6.0'
-    compile 'io.prometheus:simpleclient_hotspot:0.6.0'
-    compile 'io.prometheus:simpleclient_dropwizard:0.6.0'
-
     compile 'org.rocksdb:rocksdbjni:5.5.1'
 
     compile 'org.slf4j:slf4j-api:1.7.2'
@@ -33,7 +28,24 @@ dependencies {
     compile 'org.zeroturnaround:zt-exec:1.10'
 }
 
-task(run, dependsOn: 'classes', type: JavaExec) {
+// delete state and intellij build directory
+clean.doFirst {
+    delete 'state'
+    delete 'out'
+}
+
+// create fat jar
+jar {
+    manifest {
+        attributes "Main-Class": "system.Orchestrator"
+    }
+
+    from {
+        configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+}
+
+task(run, dependsOn: 'build', type: JavaExec) {
     main = 'system.Orchestrator'
     classpath = sourceSets.main.runtimeClasspath
 }

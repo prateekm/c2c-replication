@@ -40,19 +40,9 @@ public class Replicator extends Thread {
         connectionHandler = new ConnectionHandler(replicatorId, socket);
         connectionHandler.start();
       }
-      LOGGER.error("Exiting connection accept loop in Replicator: {}", replicatorId);
-    } catch (RocksDBException re) {
-      LOGGER.error("Error creating replicator db in Replicator: {}", replicatorId, re);
+      LOGGER.info("Exiting connection accept loop in Replicator: {}", replicatorId);
     } catch (Exception e) {
-      LOGGER.error("Error creating socket connection in Replicator: {}", replicatorId, e);
-    } finally {
-      try {
-        if (connectionHandler != null) {
-          connectionHandler.join(1000);
-        }
-      } catch (Exception e) {
-        LOGGER.error("Timeout shutting down connection handler in Replicator: {}", replicatorId, e);
-      }
+      throw new RuntimeException("Error handling connection in Replicator." + replicatorId, e);
     }
   }
 
@@ -101,15 +91,15 @@ public class Replicator extends Thread {
           }
         }
       } catch (EOFException | SocketException e) {
-        LOGGER.error("Shutting down connection handler in Replicator: {}", replicatorId);
+        LOGGER.info("Shutting down connection handler in Replicator: {}", replicatorId);
       } catch (Exception e) {
-        LOGGER.error("Shutting down connection handler in Replicator: {}", replicatorId, e);
+        LOGGER.info("Shutting down connection handler in Replicator: {}", replicatorId, e);
       } finally {
         try {
           socket.close();
           if (replicatorDb.isOwningHandle()) replicatorDb.close();
         } catch (Exception e) {
-          LOGGER.error("Error during ConnectionHandler shutdown in Replicator: {}", replicatorId, e);
+          LOGGER.info("Error during ConnectionHandler shutdown in Replicator: {}", replicatorId, e);
         }
       }
     }

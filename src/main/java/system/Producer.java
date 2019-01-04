@@ -46,7 +46,6 @@ public class Producer {
     new ReplicaConnection(producerId, firstReplicaId, firstReplicaPort, producerDb, taskDb,
         firstReplicaPendingCommit).start();
 
-
     String secondReplicaId = producerId + "1";
     Integer secondReplicaPort = Constants.JOB_MODEL.getReplicators().get(secondReplicaId).right;
     new ReplicaConnection(producerId, secondReplicaId, secondReplicaPort, producerDb, taskDb,
@@ -121,7 +120,7 @@ public class Producer {
           }
         }
       } catch (Exception e) {
-        LOGGER.error("Error creating socket connection to Replicator: {} in Producer: {}", replicatorId, producerId, e);
+        throw new RuntimeException("Error in ReplicaConnection to Replicator: " + replicatorId + " in Producer: " + producerId, e);
       }
     }
 

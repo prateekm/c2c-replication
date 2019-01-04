@@ -35,9 +35,9 @@ public class Util {
     try {
       return Files.isReadable(filePath)
           ? Files.readAllBytes(filePath)
-          : Ints.toByteArray(1); // TODO rocksdb fails assert if starting messageId is 0
+          : Ints.toByteArray(1);
     } catch (IOException e) {
-      return Ints.toByteArray(1); // TODO rocksdb fails assert if starting messageId is 0
+      return Ints.toByteArray(1);
     }
   }
 
