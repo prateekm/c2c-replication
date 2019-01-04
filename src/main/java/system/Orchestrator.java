@@ -26,22 +26,31 @@ import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.impl.SimpleLogger;
 import org.zeroturnaround.exec.ProcessExecutor;
 import org.zeroturnaround.exec.StartedProcess;
 import org.zeroturnaround.exec.stream.slf4j.Slf4jStream;
 
 // TODO NOTE: MUST REBUILD PROJECT BEFORE RUNNING. MUST UPDATE CMD AFTER CHANGING DEPS
 public class Orchestrator {
+  static {
+    System.setProperty(SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "INFO");
+    System.setProperty(SimpleLogger.SHOW_DATE_TIME_KEY, "false");
+    System.setProperty(SimpleLogger.SHOW_THREAD_NAME_KEY, "false");
+    System.setProperty(SimpleLogger.SHOW_SHORT_LOG_NAME_KEY, "true");
+    System.setProperty(SimpleLogger.LEVEL_IN_BRACKETS_KEY, "true");
+  }
+
   private static final Logger LOGGER = LoggerFactory.getLogger(Orchestrator.class);
   private static final ExecutorService EXECUTOR_SERVICE = Executors.newFixedThreadPool(3);
   private static final int NUM_PROCESSES = 3;
-  private static final long TOTAL_RUNTIME_SECONDS = 600;
-  private static final int MAX_RUNTIME_SECONDS = 60;
-  private static final int MIN_RUNTIME_SECONDS = 50;
+  private static final long TOTAL_RUNTIME_SECONDS = 300;
+  private static final int MAX_RUNTIME_SECONDS = 10;
+  private static final int MIN_RUNTIME_SECONDS = 10;
   private static final int MIN_INTERVAL_BETWEEN_START_SECONDS = 5;
 
-  public static void main(String[] args) {
-    failuresWithHostAffinity();
+  public static void main(String[] args) throws Exception {
+    failuresWithoutHostAffinity();
     verifyState();
   }
 
@@ -73,9 +82,9 @@ public class Orchestrator {
             }
             Uninterruptibles.sleepUninterruptibly(MIN_INTERVAL_BETWEEN_START_SECONDS, TimeUnit.SECONDS);
           }
-          LOGGER.info("Shutting down launcher thread for id " + id);
+          LOGGER.info("Shutting down launcher thread for process " + id);
         } catch (Exception e) {
-          LOGGER.error("Error in launcher thread for id " + id);
+          LOGGER.error("Error in launcher thread for process " + id);
         }
       });
     }
@@ -87,7 +96,7 @@ public class Orchestrator {
   }
 
   private static void failuresWithoutHostAffinity() throws Exception {
-    List<StartedProcess> processes = new ArrayList<>(NUM_PROCESSES);
+    StartedProcess[] processes = new StartedProcess[NUM_PROCESSES];
 
     for (int id = 0; id < NUM_PROCESSES; id++) {
       try {
@@ -104,22 +113,27 @@ public class Orchestrator {
       nextTransition(processes);
     }
 
+    waitUntilProcessesStable();
     for (StartedProcess process: processes) {
-      process.getProcess().destroyForcibly().waitFor();
+      process.getProcess().destroy();
+      process.getProcess().waitFor();
     }
   }
 
-  private static void nextTransition(List<StartedProcess> processes) throws Exception {
+  private static void nextTransition(StartedProcess[] processes) throws Exception {
     int operation = Constants.RANDOM.nextInt(4);
+    waitUntilProcessesStable();
     switch (operation) {
       case 0: { // kill random producer
         int pid = Constants.RANDOM.nextInt(NUM_PROCESSES);
+        LOGGER.info("Next operation: kill producer {}", pid);
         killProducer(processes, pid);
         break;
       }
       case 1: { // kill random replicator
         int pid = Constants.RANDOM.nextInt(NUM_PROCESSES);
         String rid = pid + "" + Constants.RANDOM.nextInt(2);
+        LOGGER.info("Next operation: kill replicator {}", rid);
         killReplicator(processes, rid);
         break;
       }
@@ -127,12 +141,14 @@ public class Orchestrator {
         int pid = Constants.RANDOM.nextInt(NUM_PROCESSES);
         String rid0 = pid + "" + 0;
         String rid1 = pid + "" + 1;
+        LOGGER.info("Next operation: kill both replicators for pid {}", pid);
         killReplicator(processes, rid0);
         killReplicator(processes, rid1);
         break;
       }
       case 3: { // kill both replicators and bounce producer (simulates Replica then Producer failure)
         int pid = Constants.RANDOM.nextInt(NUM_PROCESSES);
+        LOGGER.info("Next operation: kill both replicators and bounce producer for pid {}", pid);
         String rid0 = pid + "" + 0;
         String rid1 = pid + "" + 1;
         killReplicator(processes, rid0);
@@ -145,13 +161,15 @@ public class Orchestrator {
     }
   }
 
-  private static void killReplicator(List<StartedProcess> processes, String rid) throws Exception {
+  private static void killReplicator(StartedProcess[] processes, String rid) throws Exception {
+    LOGGER.info("Killing replicator: {}", rid);
     stopProcess(processes, getReplicatorPid(rid));
     clearReplicatorState(rid);
     startProcess(processes, getReplicatorPid(rid));
   }
 
-  private static void killProducer(List<StartedProcess> processes, int pid) throws Exception {
+  private static void killProducer(StartedProcess[] processes, int pid) throws Exception {
+    LOGGER.info("Killing producer: {}", pid);
     stopProcess(processes, pid);
     clearProducerState(pid);
     String rid = pid + "" + Constants.RANDOM.nextInt(2); // randomly choose a replicator
@@ -166,41 +184,63 @@ public class Orchestrator {
     return Constants.JOB_MODEL.replicators.get(rid).left;
   }
 
-  private static void startProcess(List<StartedProcess> processes, int id) throws IOException {
+  private static void startProcess(StartedProcess[] processes, int id) throws IOException {
+    LOGGER.info("Starting process: {}", id);
     StartedProcess startedProcess = new ProcessExecutor()
         .command((CMD + " " + id).split("\\s+")) // args must be provided separately from cmd
         .redirectOutput(Slf4jStream.of("Container " + id).asInfo())
         .destroyOnExit()
         .start();
-    processes.add(id, startedProcess);
+    processes[id] = startedProcess;
   }
 
-  private static void stopProcess(List<StartedProcess> processes, int id) throws InterruptedException {
-    Process process = processes.get(id).getProcess().destroyForcibly();
+  private static void stopProcess(StartedProcess[] processes, int id) throws InterruptedException {
+    LOGGER.info("Stopping process: {}", id);
+    Process process = processes[id].getProcess();
+    process.destroy(); // TODO be nice for now to release rocksdb locks. try destroyForcibly later.
     process.waitFor();
-    processes.remove(id);
+    processes[id] = null;
   }
 
+  // TODO simulate stale offset on replicator
   private static void setReplicatorOffset(String rid, int offset) {
-    // TODO simulate offset fallen behind
   }
 
   private static void clearProducerState(int id) throws IOException {
+    LOGGER.info("Clearing state for producer: {}", id);
     String producerStoreDir = Constants.PRODUCER_STORE_BASE_PATH + "/" + id;
-    Files.walk(Paths.get(producerStoreDir))
-        .sorted(Comparator.reverseOrder())
-        .map(Path::toFile)
-        .forEach(File::delete);
+    Util.rmrf(producerStoreDir);
   }
 
   private static void clearReplicatorState(String rid) throws IOException {
+    LOGGER.info("Clearing state for replicator: {}", rid);
     String replicatorStoreDir = Constants.REPLICATOR_STORE_BASE_PATH + "/" + rid;
-    Files.walk(Paths.get(replicatorStoreDir))
-        .sorted(Comparator.reverseOrder())
-        .map(Path::toFile)
-        .forEach(File::delete);
+    try {
+      Util.rmrf(replicatorStoreDir);
+      Files.deleteIfExists(Constants.getReplicatorOffsetFile(rid));
+    } catch (Exception e) {
+      LOGGER.warn("Error clearing replicator state. Continuing.", e);
+    }
+  }
 
-    Files.delete(Constants.getReplicatorOffsetFile(rid));
+  private static void waitUntilProcessesStable() throws InterruptedException {
+    boolean allStable = false;
+    long startTime = System.currentTimeMillis();
+    while (!allStable) {
+      Thread.sleep(1000);
+      boolean allExist = true;
+      for (int p = 0; p < 3; p++) {
+        for (int r = 0; r < 2; r++) {
+          String rid = p + "" + r;
+          if (!Files.exists(Constants.getReplicatorOffsetFile(rid))) {
+            LOGGER.debug("Offset file does not exist yet for Replicator: {}", rid);
+            allExist = false;
+          }
+        }
+      }
+      allStable = allExist;
+    }
+    LOGGER.info("Waited {} seconds for all processes to be stable", (System.currentTimeMillis() - startTime) / 1000);
   }
 
   private static void verifyState() {
@@ -225,8 +265,10 @@ public class Orchestrator {
 
     byte[] lastCommittedMessageId = Util.readFile(Constants.getTaskOffsetFile(taskId));
     int messageId = Ints.fromByteArray(lastCommittedMessageId);
+    LOGGER.info("Last committed message id: {} for task: {}", messageId, taskId);
     int maxValidKey = messageId * taskId + messageId;
 
+    int verifiedKeys = 0;
     for(; taskDbIterator.isValid(); taskDbIterator.next()) {
       byte[] key = taskDbIterator.key();
       int intKey = Ints.fromByteArray(key);
@@ -240,13 +282,16 @@ public class Orchestrator {
         Preconditions.checkState(Arrays.equals(taskDbIterator.value(), r0value)); // task and r0 values are equal
         Preconditions.checkState(Arrays.equals(r0value, r1value)); // r0 and r1 values are equal
       } catch (Exception e) {
-        LOGGER.error("Verification error for key: " + intKey, e);
+        LOGGER.error("Verification error for key: {} for task: {}", intKey, taskId, e);
+        throw e;
       }
+      verifiedKeys++;
     }
     taskDbIterator.close();
     taskDb.close();
     replicator0Db.close();
     replicator1Db.close();
+    LOGGER.info("Verified {} keys for task: {}", verifiedKeys, taskId);
   }
 
   // TODO NOTE: MUST REBUILD PROJECT BEFORE RUNNING. MUST UPDATE CMD AFTER CHANGING DEPS

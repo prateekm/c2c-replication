@@ -14,7 +14,7 @@ import org.slf4j.LoggerFactory;
 public class Task extends Thread {
   private static final Logger LOGGER = LoggerFactory.getLogger(Task.class);
   private static final FlushOptions FLUSH_OPTIONS = new FlushOptions().setWaitForFlush(true);
-  private static final int COMMIT_INTERVAL = 100000;
+  private static final int COMMIT_INTERVAL = 10000;
 
   private final Integer taskId;
   private final RocksDB taskDb;
@@ -40,7 +40,7 @@ public class Task extends Thread {
 
     try {
       while(!Thread.currentThread().isInterrupted()) {
-//        Thread.sleep(Constants.RANDOM.nextInt(10));
+        Thread.sleep(1);
 
         int data = messageId * taskId + messageId;
         ByteBuffer.wrap(key).putInt(data); // different key pattern per task.
@@ -49,7 +49,7 @@ public class Task extends Thread {
 
         producer.send(key, value);
         if (messageId % COMMIT_INTERVAL == 0) {
-          LOGGER.info("Requesting Producer commit for messageId: {} in Task: {}.", messageId, taskId);
+          LOGGER.debug("Requesting Producer commit for messageId: {} in Task: {}.", messageId, taskId);
           producer.commit();
           taskDb.flush(FLUSH_OPTIONS);
           Util.writeFile(commitFilePath, Ints.toByteArray(messageId));

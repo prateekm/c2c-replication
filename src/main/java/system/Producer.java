@@ -3,6 +3,7 @@ package system;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 import util.Constants;
+import util.Util;
 
 import java.io.DataInputStream;
 import java.io.IOException;
@@ -24,47 +25,43 @@ public class Producer {
 
   private final Integer producerId;
   private final RocksDB producerDb;
-  private final Integer firstReplicaPort;
-  private final Integer secondReplicaPort;
-  private int lastOffset = 1; // Note: must match default value for an offset if no offset file found
+  private final RocksDB taskDb;
+  private int nextOffset; // Note: must match default value for an offset if no offset file found
 
   private final AtomicInteger firstReplicaPendingCommit = new AtomicInteger();
   private final AtomicInteger secondReplicaPendingCommit = new AtomicInteger();
 
-  public Producer(Integer producerId, RocksDB producerDb, Integer firstReplicaPort, Integer secondReplicaPort) {
+  public Producer(Integer producerId, RocksDB producerDb, RocksDB taskDb) {
     this.producerId = producerId;
     this.producerDb = producerDb;
-    this.firstReplicaPort = firstReplicaPort;
-    this.secondReplicaPort = secondReplicaPort;
-
-    try {
-      RocksIterator iterator = producerDb.newIterator();
-      iterator.seekToLast();
-      if (iterator.isValid()) {
-        lastOffset = Ints.fromByteArray(iterator.key()) + 1;
-      } else {
-        lastOffset = 1;
-      }
-    } catch (Exception e) {
-      LOGGER.error("Could no get lastOffset from producerDb.", e);
-      lastOffset = 1;
-    }
-    LOGGER.info("Restoring lastOffset to: {} for Producer: {}", lastOffset, producerId);
+    this.taskDb = taskDb;
+    this.nextOffset = Ints.fromByteArray(Util.readFile(Constants.getProducerOffsetFile(producerId)));
+    LOGGER.info("Restoring next offset to: {} for Producer: {}", nextOffset, producerId);
   }
 
   public void start() {
-    LOGGER.info("Producer {} is now running.", producerId);
-    new ReplicaConnection(producerId, firstReplicaPort, producerDb, firstReplicaPendingCommit).start();
-    new ReplicaConnection(producerId, secondReplicaPort, producerDb, secondReplicaPendingCommit).start();
+    LOGGER.info("Producer: {} is now running.", producerId);
+    String firstReplicaId = producerId + "0";
+    Integer firstReplicaPort = Constants.JOB_MODEL.getReplicators().get(firstReplicaId).right;
+    new ReplicaConnection(producerId, firstReplicaId, firstReplicaPort, producerDb, taskDb,
+        firstReplicaPendingCommit).start();
+
+
+    String secondReplicaId = producerId + "1";
+    Integer secondReplicaPort = Constants.JOB_MODEL.getReplicators().get(secondReplicaId).right;
+    new ReplicaConnection(producerId, secondReplicaId, secondReplicaPort, producerDb, taskDb,
+        secondReplicaPendingCommit).start();
   }
 
+  // TODO HOW handle DELETE?
   public void send(byte[] key, byte[] value) throws Exception {
     byte[] message = ByteBuffer.wrap(new byte[8]).put(key).put(value).array();
-    producerDb.put(Ints.toByteArray(lastOffset), message);
-    lastOffset++;
+    producerDb.put(Ints.toByteArray(nextOffset), message);
+    nextOffset++;
   }
 
   public void commit() throws Exception {
+    int commitOffset = nextOffset - 1;
     producerDb.flush(FLUSH_OPTIONS);
     firstReplicaPendingCommit.incrementAndGet();
     secondReplicaPendingCommit.incrementAndGet();
@@ -73,31 +70,41 @@ public class Producer {
       Thread.sleep(10); // wait for commit ack
     }
 
+    // may be less than the offset actually committed at the replicator
+    Util.writeFile(Constants.getProducerOffsetFile(producerId), Ints.toByteArray(commitOffset));
+
     // clean up data up to committed offset
     RocksIterator iterator = producerDb.newIterator();
     iterator.seekToFirst();
     byte[] dbKey = iterator.key();
-    LOGGER.info("Requesting deleteRange from oldest offset: {} to committed offset: {} in Producer {}",
-        Ints.fromByteArray(dbKey), lastOffset - 1, producerId);
-    producerDb.deleteRange(dbKey, Ints.toByteArray(lastOffset + 1)); // should be inclusive of committed offset
+    LOGGER.debug("Trimming producerDb from oldest offset: {} to committed offset: {} in Producer: {}",
+        Ints.fromByteArray(dbKey), commitOffset, producerId);
+    producerDb.deleteRange(dbKey, Ints.toByteArray(commitOffset + 1)); // should be inclusive of committed offset
     iterator.close();
   }
 
   private static class ReplicaConnection extends Thread {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ReplicaConnection.class);
     private final Integer producerId;
+    private final String replicatorId;
     private final Integer replicaPort;
     private final RocksDB producerDb;
+    private final RocksDB taskDb;
     private final AtomicInteger pendingCommit;
 
-    public ReplicaConnection(Integer producerId, Integer replicaPort, RocksDB producerDb, AtomicInteger pendingCommit) {
+    public ReplicaConnection(Integer producerId, String replicatorId, Integer replicaPort,
+        RocksDB producerDb, RocksDB taskDb, AtomicInteger pendingCommit) {
+      super("ReplicaConnection " + replicatorId);
       this.producerId = producerId;
+      this.replicatorId = replicatorId;
       this.replicaPort = replicaPort;
       this.producerDb = producerDb;
+      this.taskDb = taskDb;
       this.pendingCommit = pendingCommit;
     }
 
     public void run() {
-      LOGGER.info("ReplicaConnection handler to port: {} for Producer: {} is now running.", replicaPort, producerId);
+      LOGGER.info("ReplicaConnection handler to Replicator: {} for Producer: {} is now running.", replicatorId, producerId);
       try {
         Socket socket = new Socket();
         socket.setTcpNoDelay(true);
@@ -105,16 +112,16 @@ public class Producer {
         while (!socket.isConnected()) {
           try {
             socket.connect(new InetSocketAddress(Constants.SERVER_HOST, replicaPort), 0);
-            LOGGER.info("Connected to {}:{} from Producer {}", Constants.SERVER_HOST, replicaPort, producerId);
+            LOGGER.info("Connected to Replicator: {} in Producer: {}", replicatorId, producerId);
             replicate(socket); // blocks
           } catch (Exception ce) {
-            LOGGER.info("Retrying connection from Producer {}. Socket status: " + socket.toString(), producerId);
+            LOGGER.debug("Retrying connection to Replicator: {} in Producer: {}", replicatorId, producerId);
             socket = new Socket();
             Thread.sleep(1000);
           }
         }
       } catch (Exception e) {
-        LOGGER.error("Error creating socket connection from Producer {}", producerId, e);
+        LOGGER.error("Error creating socket connection to Replicator: {} in Producer: {}", replicatorId, producerId, e);
       }
     }
 
@@ -122,8 +129,23 @@ public class Producer {
       DataInputStream inputStream = new DataInputStream(socket.getInputStream());
       OutputStream outputStream = socket.getOutputStream();
 
-      byte[] lastSentOffset = synchronize(inputStream, outputStream);
-      LOGGER.info("Last offset after synchronization: {} in Producer: {}", Ints.fromByteArray(lastSentOffset), producerId);
+      int lastCommittedOffset = getLastCommittedOffset(inputStream, outputStream);
+      LOGGER.debug("Last committed offset before synchronization: {} for Replicator: {} in Producer: {}",
+          lastCommittedOffset, replicatorId, producerId);
+
+      int producerLCOffset = Ints.fromByteArray(Util.readFile(Constants.getProducerOffsetFile(producerId)));
+      if (lastCommittedOffset < producerLCOffset) {
+        LOGGER.info("Replica: {} LCO: {} was less than producer LCO: {}", replicatorId, lastCommittedOffset, producerLCOffset);
+        deleteReplica(inputStream, outputStream);
+        taskDb.flush(FLUSH_OPTIONS);
+        writeTaskDb(outputStream); // send everything in task db.
+        lastCommittedOffset = 0; // send everything in producer db.
+      }
+
+      producerDb.flush(FLUSH_OPTIONS);
+      byte[] lastSentOffset = writeSinceOffset(outputStream, Ints.toByteArray(lastCommittedOffset));
+      LOGGER.debug("Last sent offset after synchronization: {} for Replicator: {} in Producer: {}",
+          Ints.fromByteArray(lastSentOffset), replicatorId, producerId);
 
       while(!Thread.currentThread().isInterrupted()) {
         byte[] sentOffset = writeSinceOffset(outputStream, lastSentOffset);
@@ -140,27 +162,26 @@ public class Producer {
       }
     }
 
-    // returns the last offset written to replicator
-    private byte[] synchronize(DataInputStream inputStream, OutputStream outputStream) throws Exception {
+    // returns the last offset committed at the replicator
+    private int getLastCommittedOffset(DataInputStream inputStream, OutputStream outputStream) throws Exception {
       final byte[] opCode = new byte[4];
       final byte[] offset = new byte[4];
 
-      LOGGER.info("Requesting sync in Producer {}", producerId);
-      outputStream.write(Constants.OPCODE_SYNC);
+      LOGGER.debug("Requesting LCO from Replicator: {} in Producer: {}", replicatorId, producerId);
+      outputStream.write(Constants.OPCODE_LCO);
       outputStream.flush();
 
       inputStream.readFully(opCode);
-      if (!Arrays.equals(opCode, Constants.OPCODE_SYNC)) {
+      if (!Arrays.equals(opCode, Constants.OPCODE_LCO)) {
         throw new IllegalStateException();
       }
       inputStream.readFully(offset);
-      LOGGER.info("Received sync response with offset: {} in Producer: {}", Ints.fromByteArray(offset), producerId);
-
-      producerDb.flush(FLUSH_OPTIONS);
-      return writeSinceOffset(outputStream, offset);
+      LOGGER.debug("Received LCO: {} from Replicator: {} in Producer: {}",
+          Ints.fromByteArray(offset), replicatorId, producerId);
+      return Ints.fromByteArray(offset);
     }
 
-    // returns the last offset written to replicator
+    // returns the last offset sent to replicator (may not be committed)
     private byte[] writeSinceOffset(OutputStream outputStream, byte[] offset) throws IOException {
       byte[] lastSentOffset = offset;
       // send data from DB since provided offset.
@@ -174,12 +195,11 @@ public class Producer {
         ByteBuffer.wrap(message).get(messageKey);
         ByteBuffer.wrap(message).get(messageValue);
 
-        LOGGER.debug("Sending data for offset: {} key: {} from Producer: {}",
-            Ints.fromByteArray(storedOffset), Ints.fromByteArray(messageKey), producerId);
+        LOGGER.debug("Sending data for offset: {} key: {} to Replicator: {} from Producer: {}",
+            Ints.fromByteArray(storedOffset), Ints.fromByteArray(messageKey), replicatorId, producerId);
         outputStream.write(Constants.OPCODE_WRITE);
         outputStream.write(messageKey);
         outputStream.write(messageValue);
-        // outputStream.flush(); not necessary (don't need to block on every write)
         lastSentOffset = storedOffset;
         iterator.next();
       }
@@ -188,24 +208,66 @@ public class Producer {
       return lastSentOffset;
     }
 
-    // returns committed offset
-    private byte[] commit(DataInputStream inputStream, OutputStream outputStream, byte[] offset) throws Exception {
+    // commit provided offset at replicator
+    private void commit(DataInputStream inputStream, OutputStream outputStream, byte[] offset) throws Exception {
       byte[] opCode = new byte[4];
       byte[] committedOffset = new byte[4];
-      LOGGER.info("Requesting commit for offset: {} in Producer: {}", Ints.fromByteArray(offset), producerId);
+      LOGGER.debug("Requesting commit for offset: {} to Replicator: {} in Producer: {}",
+          Ints.fromByteArray(offset), replicatorId, producerId);
       outputStream.write(Constants.OPCODE_COMMIT);
       outputStream.write(offset);
       outputStream.flush();
 
       inputStream.readFully(opCode);
       if (!Arrays.equals(opCode, Constants.OPCODE_COMMIT)) {
-        throw new IllegalStateException("Illegal opCode: " + Ints.fromByteArray(opCode) + " in Producer: " + producerId);
+        throw new IllegalStateException("Illegal opCode: " + Ints.fromByteArray(opCode) +
+            " from Replicator: " + replicatorId + " in Producer: " + producerId);
       }
       inputStream.readFully(committedOffset);
-      LOGGER.info("Received commit acknowledgement for offset: {} in Producer: {}",
-          Ints.fromByteArray(offset), producerId);
+      LOGGER.debug("Received commit acknowledgement for offset: {} from Replicator: {} in Producer: {}",
+          Ints.fromByteArray(offset), replicatorId, producerId);
       Preconditions.checkState(Arrays.equals(offset, committedOffset));
-      return committedOffset;
+    }
+
+    // deleteReplica everything in replicator db
+    private void deleteReplica(DataInputStream inputStream, OutputStream outputStream) throws Exception {
+      byte[] opCode = new byte[4];
+      LOGGER.info("Requesting delete from Replicator: {} in Producer: {}", replicatorId, producerId);
+      outputStream.write(Constants.OPCODE_DELETE);
+      outputStream.flush();
+
+      inputStream.readFully(opCode);
+      if (!Arrays.equals(opCode, Constants.OPCODE_DELETE)) {
+        throw new IllegalStateException("Illegal opCode: " + Ints.fromByteArray(opCode) +
+            " from Replicator: " + replicatorId + " in Producer: " + producerId);
+      }
+      LOGGER.info("Received delete acknowledgement from Replicator: {} in Producer: {}", replicatorId, producerId);
+    }
+
+    // send everything from task db
+    private void writeTaskDb(OutputStream outputStream) throws IOException {
+      LOGGER.info("Sending data from taskDb to Replicator: {} from Producer: {}", replicatorId, producerId);
+      RocksIterator iterator = taskDb.newIterator();
+      iterator.seekToFirst();
+      int numMessagesSent = 0;
+      while(iterator.isValid()) {
+        byte[] message = iterator.value();
+        byte[] messageKey = new byte[4];
+        byte[] messageValue = new byte[4];
+        ByteBuffer.wrap(message).get(messageKey);
+        ByteBuffer.wrap(message).get(messageValue);
+
+        LOGGER.debug("Sending data from taskDb for key: {} to Replicator: {} from Producer: {}",
+            Ints.fromByteArray(messageKey), replicatorId, producerId);
+        outputStream.write(Constants.OPCODE_WRITE);
+        outputStream.write(messageKey);
+        outputStream.write(messageValue);
+        numMessagesSent++;
+        iterator.next();
+      }
+      outputStream.flush();
+      iterator.close();
+      LOGGER.info("Sent {} messages from taskDb to Replicator: {} from Producer: {}", numMessagesSent, replicatorId, producerId);
     }
   }
 }

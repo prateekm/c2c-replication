@@ -5,10 +5,13 @@ import com.codahale.metrics.Slf4jReporter;
 import com.codahale.metrics.jmx.JmxReporter;
 import com.google.common.primitives.Ints;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.Comparator;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 
@@ -47,5 +50,12 @@ public class Util {
         StandardOpenOption.TRUNCATE_EXISTING,
         StandardOpenOption.WRITE,
         StandardOpenOption.SYNC);
+  }
+
+  public static void rmrf(String path) throws IOException {
+    Files.walk(Paths.get(path))
+        .sorted(Comparator.reverseOrder())
+        .map(Path::toFile)
+        .forEach(File::delete);
   }
 }

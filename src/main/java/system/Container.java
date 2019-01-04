@@ -12,8 +12,18 @@ import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.impl.SimpleLogger;
 
 public class Container {
+  static {
+    System.setProperty(SimpleLogger.DEFAULT_LOG_LEVEL_KEY, "INFO");
+    System.setProperty(SimpleLogger.SHOW_DATE_TIME_KEY, "true");
+    System.setProperty(SimpleLogger.DATE_TIME_FORMAT_KEY, "hh:mm:ss:SSS");
+    System.setProperty(SimpleLogger.SHOW_THREAD_NAME_KEY, "false");
+    System.setProperty(SimpleLogger.SHOW_SHORT_LOG_NAME_KEY, "true");
+    System.setProperty(SimpleLogger.LEVEL_IN_BRACKETS_KEY, "true");
+  }
+
   private static final Logger LOGGER = LoggerFactory.getLogger(Container.class);
   private final Task task;
   private final Producer producer;
@@ -27,7 +37,7 @@ public class Container {
 
     int containerId = Integer.valueOf(args[0]);
     ContainerModel containerModel = Constants.JOB_MODEL.getContainerModel(containerId);
-    LOGGER.info(containerModel.toString());
+    LOGGER.info("Container: {} is starting with model: {}",  containerId, containerModel);
     Integer taskId = containerModel.getTaskId();
 
     try {
@@ -36,9 +46,7 @@ public class Container {
       RocksDB taskDb = RocksDB.open(dbOptions, Constants.TASK_STORE_BASE_PATH + "/" + taskId);
       RocksDB producerDb = RocksDB.open(dbOptions, Constants.PRODUCER_STORE_BASE_PATH + "/" + taskId);
 
-      Integer firstReplicaPort = Constants.JOB_MODEL.getReplicators().get(taskId + "0").right;
-      Integer secondReplicaPort = Constants.JOB_MODEL.getReplicators().get(taskId + "1").right;
-      Producer producer = new Producer(taskId, producerDb, firstReplicaPort, secondReplicaPort); // producer id == task id
+      Producer producer = new Producer(taskId, producerDb, taskDb); // producer id == task id
       Task task = new Task(taskId, taskDb, producer);
 
       List<Replicator> replicators = new ArrayList<>();
@@ -46,8 +54,7 @@ public class Container {
         if (entry.getValue().left.equals(taskId)) {
           String replicatorId = entry.getKey();
           Integer replicatorPort = entry.getValue().right;
-          RocksDB replicatorDb = RocksDB.open(dbOptions, Constants.REPLICATOR_STORE_BASE_PATH + "/" + replicatorId);
-          Replicator replicator = new Replicator(replicatorId, replicatorPort, replicatorDb);
+          Replicator replicator = new Replicator(replicatorId, replicatorPort);
           replicators.add(replicator);
         }
       }

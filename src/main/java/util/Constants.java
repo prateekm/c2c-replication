@@ -13,12 +13,14 @@ public class Constants {
 
   public static final String SERVER_HOST = "127.0.0.1";
 
-  public static final int OPCODE_SYNC_INT = 0;
-  public static final byte[] OPCODE_SYNC = Ints.toByteArray(OPCODE_SYNC_INT);
+  public static final int OPCODE_LCO_INT = 0;
+  public static final byte[] OPCODE_LCO = Ints.toByteArray(OPCODE_LCO_INT);
   public static final int OPCODE_WRITE_INT = 1;
   public static final byte[] OPCODE_WRITE = Ints.toByteArray(OPCODE_WRITE_INT);
   public static final int OPCODE_COMMIT_INT = 2;
   public static final byte[] OPCODE_COMMIT = Ints.toByteArray(OPCODE_COMMIT_INT);
+  public static final int OPCODE_DELETE_INT = 3;
+  public static final byte[] OPCODE_DELETE = Ints.toByteArray(OPCODE_DELETE_INT);
 
   public static final String TASK_STORE_BASE_PATH = "state/stores/task";
   public static final String PRODUCER_STORE_BASE_PATH = "state/stores/producer";
@@ -27,6 +29,10 @@ public class Constants {
   private static final String COMMITTED_OFFSETS_BASE_PATH = "state/offsets";
   public static Path getTaskOffsetFile(int taskId) {
     return Paths.get(Constants.COMMITTED_OFFSETS_BASE_PATH + "/task-" + taskId + "/MESSAGE_ID");
+  }
+
+  public static Path getProducerOffsetFile(int producerId) {
+    return Paths.get(Constants.COMMITTED_OFFSETS_BASE_PATH + "/producer-" + producerId + "/OFFSET");
   }
 
   public static Path getReplicatorOffsetFile(String replicatorId) {
