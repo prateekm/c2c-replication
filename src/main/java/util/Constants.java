@@ -13,7 +13,7 @@ public class Constants {
   public static class Orchestrator {
     public static final int NUM_PROCESSES = 3;
     public static int TOTAL_RUNTIME_SECONDS = 600;
-    public static int MAX_RUNTIME_SECONDS = 60;
+    public static int MAX_RUNTIME_SECONDS = 45;
     public static int MIN_RUNTIME_SECONDS = 30;
     public static int INTERVAL_BETWEEN_RESTART_SECONDS = 5; // required to allow rocksdb locks to be released
   }

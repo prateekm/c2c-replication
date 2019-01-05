@@ -141,7 +141,7 @@ public class Producer {
         deleteReplica(inputStream, outputStream);
         taskDb.flush(Constants.Common.FLUSH_OPTIONS);
         writeTaskDb(outputStream); // send everything in task db.
-        lastCommittedOffset = Integer.MIN_VALUE; // send everything in producer db.
+        lastCommittedOffset = 0; // send everything in producer db.
       }
 
       producerDb.flush(Constants.Common.FLUSH_OPTIONS);
