@@ -13,6 +13,7 @@ import org.rocksdb.Options;
 public class Constants {
   public static class Orchestrator {
     public static final int NUM_PROCESSES = 3;
+    public static int NUM_ITERATIONS = 1;
     public static int TOTAL_RUNTIME_SECONDS = 600;
     public static int MAX_RUNTIME_SECONDS = 30;
     public static int MIN_RUNTIME_SECONDS = 20;

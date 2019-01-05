@@ -135,11 +135,11 @@ public class Replicator extends Thread {
       final byte[] offset = new byte[8];
 
       inputStream.readFully(offset);
-      LOGGER.debug("Received commit request for offset: {} in Replicator: {}", Longs.fromByteArray(offset), replicatorId);
+      LOGGER.info("Received commit request for offset: {} in Replicator: {}", Longs.fromByteArray(offset), replicatorId);
 
       replicatorDb.flush(Constants.Common.FLUSH_OPTIONS);
       Util.writeFile(offsetFilePath, offset);
-      LOGGER.debug("Acknowledging commit request for offset: {} in Replicator: {}", replicatorId, Longs.fromByteArray(offset));
+      LOGGER.info("Acknowledging commit request for offset: {} in Replicator: {}", Longs.fromByteArray(offset), replicatorId);
       ByteBuffer response = ByteBuffer.allocate(4 + 8);
       response.putInt(Constants.Common.OPCODE_COMMIT_INT);
       response.put(offset);

@@ -41,19 +41,27 @@ public class Orchestrator {
 
   public static void main(String[] args) throws Exception {
     setConfiguration(args);
-    simulateFailuresWithoutHostAffinity();
-    simulateFailuresWithHostAffinity();
-    verifyState();
+
+    for (int i = 0; i < Constants.Orchestrator.NUM_ITERATIONS; i++) {
+      LOGGER.info("Starting iteration {}", i);
+      simulateFailuresWithoutHostAffinity();
+      simulateFailuresWithHostAffinity();
+      verifyState();
+    }
   }
 
   private static void setConfiguration(String[] args) {
     OptionParser parser = new OptionParser();
+    parser.accepts("iterations").withOptionalArg().ofType(Integer.class);
     parser.accepts("total-runtime").withOptionalArg().ofType(Integer.class);
     parser.accepts("max-runtime").withOptionalArg().ofType(Integer.class);
     parser.accepts("min-runtime").withOptionalArg().ofType(Integer.class);
     parser.accepts("interval").withOptionalArg().ofType(Integer.class);
 
     OptionSet options = parser.parse(args);
+    if (options.hasArgument("iterations")) {
+      Constants.Orchestrator.NUM_ITERATIONS = (int) options.valueOf("iterations");
+    }
     if (options.hasArgument("total-runtime")) {
       Constants.Orchestrator.TOTAL_RUNTIME_SECONDS = (int) options.valueOf("total-runtime");
     }
@@ -74,6 +82,7 @@ public class Orchestrator {
   }
 
   private static void simulateFailuresWithHostAffinity() {
+    LOGGER.info("Simulating Failures with Host Affinity");
     ExecutorService executorService = Executors.newFixedThreadPool(3);
     long finishTimeMs = System.currentTimeMillis() + Duration.ofSeconds(Constants.Orchestrator.TOTAL_RUNTIME_SECONDS).toMillis() / 2;
 
@@ -118,6 +127,7 @@ public class Orchestrator {
   }
 
   private static void simulateFailuresWithoutHostAffinity() throws Exception {
+    LOGGER.info("Simulating Failures without Host Affinity");
     StartedProcess[] processes = new StartedProcess[Constants.Orchestrator.NUM_PROCESSES];
 
     for (int id = 0; id < Constants.Orchestrator.NUM_PROCESSES; id++) {
@@ -268,16 +278,17 @@ public class Orchestrator {
     }
   }
 
-  private static void verifyState() {
+  public static void verifyState() {
     RocksDB.loadLibrary(); // do this once.
     for (int i = 0; i < 3; i++) {
       try {
         LOGGER.info("Verifying state for task " + i);
         verifyState(i);
       } catch (Exception e) {
-        LOGGER.error("Error verifying state for task " + i, e);
+        throw new RuntimeException("Error verifying state for task " + i, e);
       }
     }
+    LOGGER.info("Verification successful.");
   }
 
   private static void verifyState(int taskId) throws RocksDBException {

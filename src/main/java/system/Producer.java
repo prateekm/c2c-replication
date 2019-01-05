@@ -65,6 +65,7 @@ public class Producer {
 
   public void commit() throws Exception {
     long commitOffset = nextOffset - 1;
+    LOGGER.info("Requesting commit for offset: {} in Producer: {}", commitOffset, producerId);
     producerDb.flush(Constants.Common.FLUSH_OPTIONS);
     firstReplicaPendingCommit.incrementAndGet();
     secondReplicaPendingCommit.incrementAndGet();
@@ -80,7 +81,7 @@ public class Producer {
     RocksIterator iterator = producerDb.newIterator();
     iterator.seekToFirst();
     byte[] dbKey = iterator.key();
-    LOGGER.debug("Trimming producerDb from oldest offset: {} to committed offset: {} in Producer: {}",
+    LOGGER.info("Trimming producerDb from oldest offset: {} to committed offset: {} in Producer: {}",
         Longs.fromByteArray(dbKey), commitOffset, producerId);
     producerDb.deleteRange(dbKey, Longs.toByteArray(commitOffset + 1)); // should be inclusive of committed offset
     iterator.close();
@@ -145,16 +146,9 @@ public class Producer {
         lastCommittedOffset = 0; // send everything in producer db.
       }
 
-      producerDb.flush(Constants.Common.FLUSH_OPTIONS);
-      byte[] lastSentOffset = writeSinceOffset(outputStream, Longs.toByteArray(lastCommittedOffset));
-      LOGGER.debug("Last sent offset after synchronization: {} for Replicator: {} in Producer: {}",
-          Longs.fromByteArray(lastSentOffset), replicatorId, producerId);
-
+      byte[] lastSentOffset = Longs.toByteArray(lastCommittedOffset);
       while(!Thread.currentThread().isInterrupted()) {
-        byte[] sentOffset = writeSinceOffset(outputStream, lastSentOffset);
-        if (!Arrays.equals(sentOffset, lastSentOffset)) { // if equal, didn't send anything new, don't increment
-          lastSentOffset = Longs.toByteArray(Longs.fromByteArray(sentOffset) + 1);
-        }
+        lastSentOffset = writeSinceOffset(outputStream, lastSentOffset);
         Thread.sleep(10);
 
         if (pendingCommit.get() == 1) {
@@ -216,7 +210,7 @@ public class Producer {
     private void commit(DataInputStream inputStream, OutputStream outputStream, byte[] offset) throws Exception {
       byte[] opCode = new byte[4];
       byte[] committedOffset = new byte[8];
-      LOGGER.debug("Requesting commit for offset: {} to Replicator: {} in Producer: {}",
+      LOGGER.info("Requesting commit for offset: {} to Replicator: {} in Producer: {}",
           Longs.fromByteArray(offset), replicatorId, producerId);
       outputStream.write(Constants.Common.OPCODE_COMMIT);
       outputStream.write(offset);
@@ -228,7 +222,7 @@ public class Producer {
             " from Replicator: " + replicatorId + " in Producer: " + producerId);
       }
       inputStream.readFully(committedOffset);
-      LOGGER.debug("Received commit acknowledgement for offset: {} from Replicator: {} in Producer: {}",
+      LOGGER.info("Received commit acknowledgement for offset: {} from Replicator: {} in Producer: {}",
           Longs.fromByteArray(offset), replicatorId, producerId);
       Preconditions.checkState(Arrays.equals(offset, committedOffset));
     }

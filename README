@@ -33,7 +33,7 @@ Resolution: Increase --interval to allow OS to release file locks.
 
 Execution:
 gradle clean (optional, clears previous state)
-gradle run -Pargs='--total-runtime 600 --max-runtime 60 --min-runtime 30 --interval 5'
+gradle run -Pargs='--iterations 10 --total-runtime 600 --max-runtime 60 --min-runtime 30 --interval 5'
 
 It is safe to kill the run at any point. Next run should continue from where the previous run left off.
 
