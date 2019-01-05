@@ -1,7 +1,7 @@
 package system;
 
 import com.google.common.base.Preconditions;
-import com.google.common.primitives.Ints;
+import com.google.common.primitives.Longs;
 import com.google.common.util.concurrent.Uninterruptibles;
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
@@ -249,7 +249,6 @@ public class Orchestrator {
     boolean allStable = false;
     long startTime = System.currentTimeMillis();
     while (!allStable) {
-      Thread.sleep(1000);
       boolean allExist = true;
       for (int p = 0; p < 3; p++) {
         for (int r = 0; r < 2; r++) {
@@ -260,9 +259,13 @@ public class Orchestrator {
           }
         }
       }
+      if (!allExist) Thread.sleep(1000);
       allStable = allExist;
     }
-    LOGGER.info("Waited {} seconds for all processes to be stable", (System.currentTimeMillis() - startTime) / 1000);
+    long waitTime = (System.currentTimeMillis() - startTime) / 1000;
+    if (waitTime > Constants.Orchestrator.MIN_RUNTIME_SECONDS) {
+      LOGGER.warn("Waited {} seconds for all processes to be stable", waitTime);
+    }
   }
 
   private static void verifyState() {
@@ -286,14 +289,14 @@ public class Orchestrator {
     taskDbIterator.seekToFirst();
 
     byte[] lastCommittedMessageId = Util.readFile(Constants.Common.getTaskOffsetFilePath(taskId));
-    int messageId = Ints.fromByteArray(lastCommittedMessageId);
+    long messageId = Longs.fromByteArray(lastCommittedMessageId);
     LOGGER.info("Last committed message id: {} for task: {}", messageId, taskId);
-    int maxValidKey = messageId * taskId + messageId;
+    long maxValidKey = messageId * taskId + messageId;
 
     int verifiedKeys = 0;
     for(; taskDbIterator.isValid(); taskDbIterator.next()) {
       byte[] key = taskDbIterator.key();
-      int intKey = Ints.fromByteArray(key);
+      long intKey = Longs.fromByteArray(key);
       if (intKey > maxValidKey) break;
 
       byte[] r0value = replicator0Db.get(key);

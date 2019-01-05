@@ -1,6 +1,7 @@
 package system;
 
 import com.google.common.primitives.Ints;
+import com.google.common.primitives.Longs;
 import util.Constants;
 import util.Util;
 
@@ -105,10 +106,10 @@ public class Replicator extends Thread {
     }
 
     private void handleLCO(OutputStream outputStream) throws IOException {
-      ByteBuffer response = ByteBuffer.allocate(4 + 4);
+      ByteBuffer response = ByteBuffer.allocate(4 + 8);
       LOGGER.debug("Received sync request in Replicator: {}", replicatorId);
       byte[] offset = Util.readFile(offsetFilePath);
-      LOGGER.debug("Requesting sync from offset: {} in Replicator: {}", Ints.fromByteArray(offset), replicatorId);
+      LOGGER.debug("Requesting sync from offset: {} in Replicator: {}", Longs.fromByteArray(offset), replicatorId);
       response.putInt(Constants.Common.OPCODE_LCO_INT);
       response.put(offset);
       response.flip();
@@ -117,10 +118,10 @@ public class Replicator extends Thread {
     }
 
     private void handleWrite(DataInputStream inputStream) throws IOException, RocksDBException {
-      final byte[] key = new byte[4];
-      final byte[] value = new byte[4];
+      final byte[] key = new byte[8];
+      final byte[] value = new byte[8];
 
-      LOGGER.debug("Received write request for key: {} in Replicator: {}", Ints.fromByteArray(key), replicatorId);
+      LOGGER.debug("Received write request for key: {} in Replicator: {}", Longs.fromByteArray(key), replicatorId);
       inputStream.readFully(key);
       inputStream.readFully(value);
       if (Arrays.equals(value, Constants.Common.DELETE_PAYLOAD)) {
@@ -131,15 +132,15 @@ public class Replicator extends Thread {
     }
 
     private void handleCommit(DataInputStream inputStream, OutputStream outputStream) throws Exception {
-      final byte[] offset = new byte[4];
+      final byte[] offset = new byte[8];
 
       inputStream.readFully(offset);
-      LOGGER.debug("Received commit request for offset: {} in Replicator: {}", Ints.fromByteArray(offset), replicatorId);
+      LOGGER.debug("Received commit request for offset: {} in Replicator: {}", Longs.fromByteArray(offset), replicatorId);
 
       replicatorDb.flush(Constants.Common.FLUSH_OPTIONS);
       Util.writeFile(offsetFilePath, offset);
-      LOGGER.debug("Acknowledging commit request for offset: {} in Replicator: {}", replicatorId, Ints.fromByteArray(offset));
-      ByteBuffer response = ByteBuffer.allocate(4 + 4);
+      LOGGER.debug("Acknowledging commit request for offset: {} in Replicator: {}", replicatorId, Longs.fromByteArray(offset));
+      ByteBuffer response = ByteBuffer.allocate(4 + 8);
       response.putInt(Constants.Common.OPCODE_COMMIT_INT);
       response.put(offset);
       response.flip();

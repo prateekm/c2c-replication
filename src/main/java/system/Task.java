@@ -1,6 +1,6 @@
 package system;
 
-import com.google.common.primitives.Ints;
+import com.google.common.primitives.Longs;
 import util.Constants;
 import util.Util;
 
@@ -18,7 +18,7 @@ public class Task extends Thread {
   private final Producer producer;
   private final Path commitFilePath;
 
-  private int messageId; // incrementing messageId
+  private long messageId; // incrementing messageId
 
   public Task(Integer taskId, RocksDB taskDb, Producer producer) {
     this.taskId = taskId;
@@ -27,13 +27,13 @@ public class Task extends Thread {
     this.commitFilePath = Constants.Common.getTaskOffsetFilePath(taskId);
 
     // contains the last committed messageId (not offset)
-    this.messageId = Ints.fromByteArray(Util.readFile(commitFilePath));
+    this.messageId = Longs.fromByteArray(Util.readFile(commitFilePath));
   }
 
   public void run() {
     LOGGER.info("Task {} is now running.", taskId);
-    final byte[] key = new byte[4];
-    final byte[] value = new byte[4];
+    final byte[] key = new byte[8];
+    final byte[] value = new byte[8];
 
     try {
       while(!Thread.currentThread().isInterrupted()) {
@@ -41,17 +41,17 @@ public class Task extends Thread {
           Thread.sleep(Constants.Task.TASK_SLEEP_MS);
         }
 
-        int data = messageId * taskId + messageId;
-        ByteBuffer.wrap(key).putInt(data); // different key pattern per task.
-        ByteBuffer.wrap(value).putInt(data);
+        long data = messageId * taskId + messageId;
+        ByteBuffer.wrap(key).putLong(data); // different key pattern per task.
+        ByteBuffer.wrap(value).putLong(data);
         taskDb.put(key, value);
         producer.send(key, value);
 
         // delete older messages to keep state size bounded
         if (messageId > Constants.Task.MAX_NUM_MESSAGES) {
-          int oldMessageId = messageId - Constants.Task.MAX_NUM_MESSAGES;
-          int oldData = oldMessageId * taskId + oldMessageId;
-          byte[] oldKey = Ints.toByteArray(oldData);
+          long oldMessageId = messageId - Constants.Task.MAX_NUM_MESSAGES;
+          long oldData = oldMessageId * taskId + oldMessageId;
+          byte[] oldKey = Longs.toByteArray(oldData);
           taskDb.delete(oldKey);
           producer.send(oldKey, null);
         }
@@ -60,7 +60,7 @@ public class Task extends Thread {
           LOGGER.info("Requesting commit for messageId: {} in Task: {}.", messageId, taskId);
           producer.commit();
           taskDb.flush(Constants.Common.FLUSH_OPTIONS);
-          Util.writeFile(commitFilePath, Ints.toByteArray(messageId));
+          Util.writeFile(commitFilePath, Longs.toByteArray(messageId));
         }
         messageId++;
       }

@@ -2,6 +2,7 @@ package system;
 
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
+import com.google.common.primitives.Longs;
 import util.Constants;
 import util.Util;
 
@@ -24,7 +25,7 @@ public class Producer {
   private final Integer producerId;
   private final RocksDB producerDb;
   private final RocksDB taskDb;
-  private int nextOffset; // Note: must match default value for an offset if no offset file found
+  private long nextOffset; // Note: must match default value for an offset if no offset file found
 
   private final AtomicInteger firstReplicaPendingCommit = new AtomicInteger();
   private final AtomicInteger secondReplicaPendingCommit = new AtomicInteger();
@@ -33,7 +34,7 @@ public class Producer {
     this.producerId = producerId;
     this.producerDb = producerDb;
     this.taskDb = taskDb;
-    this.nextOffset = Ints.fromByteArray(Util.readFile(Constants.Common.getProducerOffsetFilePath(producerId)));
+    this.nextOffset = Longs.fromByteArray(Util.readFile(Constants.Common.getProducerOffsetFilePath(producerId)));
     LOGGER.info("Restoring next offset to: {} for Producer: {}", nextOffset, producerId);
   }
 
@@ -51,19 +52,19 @@ public class Producer {
   }
 
   public void send(byte[] key, byte[] value) throws Exception {
-    ByteBuffer buffer = ByteBuffer.wrap(new byte[8]);
+    ByteBuffer buffer = ByteBuffer.wrap(new byte[16]);
     if (value != null) {
       buffer.put(key).put(value);
     } else {
       buffer.put(key).put(Constants.Common.DELETE_PAYLOAD);
     }
 
-    producerDb.put(Ints.toByteArray(nextOffset), buffer.array());
+    producerDb.put(Longs.toByteArray(nextOffset), buffer.array());
     nextOffset++;
   }
 
   public void commit() throws Exception {
-    int commitOffset = nextOffset - 1;
+    long commitOffset = nextOffset - 1;
     producerDb.flush(Constants.Common.FLUSH_OPTIONS);
     firstReplicaPendingCommit.incrementAndGet();
     secondReplicaPendingCommit.incrementAndGet();
@@ -73,15 +74,15 @@ public class Producer {
     }
 
     // may be less than the offset actually committed at the replicator
-    Util.writeFile(Constants.Common.getProducerOffsetFilePath(producerId), Ints.toByteArray(commitOffset));
+    Util.writeFile(Constants.Common.getProducerOffsetFilePath(producerId), Longs.toByteArray(commitOffset));
 
     // clean up data up to committed offset
     RocksIterator iterator = producerDb.newIterator();
     iterator.seekToFirst();
     byte[] dbKey = iterator.key();
     LOGGER.debug("Trimming producerDb from oldest offset: {} to committed offset: {} in Producer: {}",
-        Ints.fromByteArray(dbKey), commitOffset, producerId);
-    producerDb.deleteRange(dbKey, Ints.toByteArray(commitOffset + 1)); // should be inclusive of committed offset
+        Longs.fromByteArray(dbKey), commitOffset, producerId);
+    producerDb.deleteRange(dbKey, Longs.toByteArray(commitOffset + 1)); // should be inclusive of committed offset
     iterator.close();
   }
 
@@ -131,11 +132,11 @@ public class Producer {
       DataInputStream inputStream = new DataInputStream(socket.getInputStream());
       OutputStream outputStream = socket.getOutputStream();
 
-      int lastCommittedOffset = getLastCommittedOffset(inputStream, outputStream);
+      long lastCommittedOffset = getLastCommittedOffset(inputStream, outputStream);
       LOGGER.info("Last committed offset before synchronization: {} for Replicator: {} in Producer: {}",
           lastCommittedOffset, replicatorId, producerId);
 
-      int producerLCOffset = Ints.fromByteArray(Util.readFile(Constants.Common.getProducerOffsetFilePath(producerId)));
+      long producerLCOffset = Longs.fromByteArray(Util.readFile(Constants.Common.getProducerOffsetFilePath(producerId)));
       if (lastCommittedOffset < producerLCOffset) {
         LOGGER.info("Replica: {} LCO: {} was less than producer LCO: {}", replicatorId, lastCommittedOffset, producerLCOffset);
         deleteReplica(inputStream, outputStream);
@@ -145,14 +146,14 @@ public class Producer {
       }
 
       producerDb.flush(Constants.Common.FLUSH_OPTIONS);
-      byte[] lastSentOffset = writeSinceOffset(outputStream, Ints.toByteArray(lastCommittedOffset));
-      LOGGER.info("Last sent offset after synchronization: {} for Replicator: {} in Producer: {}",
-          Ints.fromByteArray(lastSentOffset), replicatorId, producerId);
+      byte[] lastSentOffset = writeSinceOffset(outputStream, Longs.toByteArray(lastCommittedOffset));
+      LOGGER.debug("Last sent offset after synchronization: {} for Replicator: {} in Producer: {}",
+          Longs.fromByteArray(lastSentOffset), replicatorId, producerId);
 
       while(!Thread.currentThread().isInterrupted()) {
         byte[] sentOffset = writeSinceOffset(outputStream, lastSentOffset);
         if (!Arrays.equals(sentOffset, lastSentOffset)) { // if equal, didn't send anything new, don't increment
-          lastSentOffset = Ints.toByteArray(Ints.fromByteArray(sentOffset) + 1);
+          lastSentOffset = Longs.toByteArray(Longs.fromByteArray(sentOffset) + 1);
         }
         Thread.sleep(10);
 
@@ -165,9 +166,9 @@ public class Producer {
     }
 
     // returns the last offset committed at the replicator
-    private int getLastCommittedOffset(DataInputStream inputStream, OutputStream outputStream) throws Exception {
+    private long getLastCommittedOffset(DataInputStream inputStream, OutputStream outputStream) throws Exception {
       final byte[] opCode = new byte[4];
-      final byte[] offset = new byte[4];
+      final byte[] offset = new byte[8];
 
       LOGGER.debug("Requesting LCO from Replicator: {} in Producer: {}", replicatorId, producerId);
       outputStream.write(Constants.Common.OPCODE_LCO);
@@ -179,8 +180,8 @@ public class Producer {
       }
       inputStream.readFully(offset);
       LOGGER.debug("Received LCO: {} from Replicator: {} in Producer: {}",
-          Ints.fromByteArray(offset), replicatorId, producerId);
-      return Ints.fromByteArray(offset);
+          Longs.fromByteArray(offset), replicatorId, producerId);
+      return Longs.fromByteArray(offset);
     }
 
     // returns the last offset sent to replicator (may not be committed)
@@ -192,14 +193,14 @@ public class Producer {
       while(iterator.isValid()) {
         byte[] storedOffset = iterator.key();
         byte[] message = iterator.value();
-        byte[] messageKey = new byte[4];
-        byte[] messageValue = new byte[4];
+        byte[] messageKey = new byte[8];
+        byte[] messageValue = new byte[8];
         ByteBuffer wrapper = ByteBuffer.wrap(message);
         wrapper.get(messageKey);
         wrapper.get(messageValue);
 
         LOGGER.debug("Sending data for offset: {} key: {} to Replicator: {} from Producer: {}",
-            Ints.fromByteArray(storedOffset), Ints.fromByteArray(messageKey), replicatorId, producerId);
+            Longs.fromByteArray(storedOffset), Longs.fromByteArray(messageKey), replicatorId, producerId);
         outputStream.write(Constants.Common.OPCODE_WRITE);
         outputStream.write(messageKey);
         outputStream.write(messageValue);
@@ -214,9 +215,9 @@ public class Producer {
     // commit provided offset at replicator
     private void commit(DataInputStream inputStream, OutputStream outputStream, byte[] offset) throws Exception {
       byte[] opCode = new byte[4];
-      byte[] committedOffset = new byte[4];
+      byte[] committedOffset = new byte[8];
       LOGGER.debug("Requesting commit for offset: {} to Replicator: {} in Producer: {}",
-          Ints.fromByteArray(offset), replicatorId, producerId);
+          Longs.fromByteArray(offset), replicatorId, producerId);
       outputStream.write(Constants.Common.OPCODE_COMMIT);
       outputStream.write(offset);
       outputStream.flush();
@@ -228,7 +229,7 @@ public class Producer {
       }
       inputStream.readFully(committedOffset);
       LOGGER.debug("Received commit acknowledgement for offset: {} from Replicator: {} in Producer: {}",
-          Ints.fromByteArray(offset), replicatorId, producerId);
+          Longs.fromByteArray(offset), replicatorId, producerId);
       Preconditions.checkState(Arrays.equals(offset, committedOffset));
     }
 
@@ -252,16 +253,16 @@ public class Producer {
       LOGGER.info("Sending data from taskDb to Replicator: {} from Producer: {}", replicatorId, producerId);
       RocksIterator iterator = taskDb.newIterator();
       iterator.seekToFirst();
-      int numMessagesSent = 0;
+      long numMessagesSent = 0;
       while(iterator.isValid()) {
         byte[] message = iterator.value();
-        byte[] messageKey = new byte[4];
-        byte[] messageValue = new byte[4];
+        byte[] messageKey = new byte[8];
+        byte[] messageValue = new byte[8];
         ByteBuffer.wrap(message).get(messageKey);
         ByteBuffer.wrap(message).get(messageValue);
 
         LOGGER.debug("Sending data from taskDb for key: {} to Replicator: {} from Producer: {}",
-            Ints.fromByteArray(messageKey), replicatorId, producerId);
+            Longs.fromByteArray(messageKey), replicatorId, producerId);
         outputStream.write(Constants.Common.OPCODE_WRITE);
         outputStream.write(messageKey);
         outputStream.write(messageValue);

@@ -4,6 +4,7 @@ import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Slf4jReporter;
 import com.codahale.metrics.jmx.JmxReporter;
 import com.google.common.primitives.Ints;
+import com.google.common.primitives.Longs;
 
 import java.io.File;
 import java.io.IOException;
@@ -35,9 +36,9 @@ public class Util {
     try {
       return Files.isReadable(filePath)
           ? Files.readAllBytes(filePath)
-          : Ints.toByteArray(1);
+          : Longs.toByteArray(1);
     } catch (IOException e) {
-      return Ints.toByteArray(1);
+      return Longs.toByteArray(1);
     }
   }
 
