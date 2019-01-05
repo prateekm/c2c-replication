@@ -1,3 +1,40 @@
+A proof-of-concept and simulator for container to container replication of local state.
+
+Current modeling restrictions:
+1. Models blocking commit only where commit is exclusive with process.
+2. Assumes replication factor of 3 (including the original copy).
+3. Blocks commit until both Replicators are fully replicated. No "min available replicas".
+
+How it works:
+First runs all 3 containers without host affinity. Randomly simulates one of the following scenarios at
+approximately every 'min-runtime' interval:
+  1. Random Producer dies and moves to a replicator host. Replicator moves to a new host.
+  2. Random Replicator dies and moves to a new host.
+  3. Both Replicators for a producer die and move to new hosts.
+  4. A Replicator dies and moves to a new host, then the Producer dies and moves to the
+     remaining replicator's host and the remaining replicator moves to a new host.
+
+Then runs all three containers with host affinity, where containers restart randomly with their
+previous state intact. Each container runs for a random amount of time between 'min-runtime' and 'max-runtime'.
+
+Finally verifies that task store contents match each replica store's contents up to the last commit for each task.
+
+Current modeling restrictions:
+  1. Does not account for replicator/producer moving to a host with stale state when running without host affinity.
+
+Potential issues and workarounds:
+1. Too many open files errors
+Cause: Can happen if Task message produce rate to commit interval ratio is too small since this creates of too many sst files.
+Resolution: Tweak Constants.Task.COMMIT_INTERVAL and Constants.Task.TASK_SLEEP_MS
+
+2. No lock file available
+Cause: Can happen if a container was destroyed forcibly (kill -9) and restarted soon after.
+Resolution: Increase --interval to allow OS to release file locks.
+
 Execution:
 gradle clean (optional, clears previous state)
 gradle run -Pargs='--total-runtime 600 --max-runtime 60 --min-runtime 30 --interval 5'
+
+It is safe to kill the run at any point. Next run should continue from where the previous run left off.
+
+Please report any [ERROR] level messages in output since they're unexpected failures.

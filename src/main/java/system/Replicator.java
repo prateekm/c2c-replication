@@ -14,6 +14,7 @@ import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.slf4j.Logger;
@@ -122,7 +123,11 @@ public class Replicator extends Thread {
       LOGGER.debug("Received write request for key: {} in Replicator: {}", Ints.fromByteArray(key), replicatorId);
       inputStream.readFully(key);
       inputStream.readFully(value);
-      replicatorDb.put(key, value);
+      if (Arrays.equals(value, Constants.Common.DELETE_PAYLOAD)) {
+        replicatorDb.delete(key);
+      } else {
+        replicatorDb.put(key, value);
+      }
     }
 
     private void handleCommit(DataInputStream inputStream, OutputStream outputStream) throws Exception {

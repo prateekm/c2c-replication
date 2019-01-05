@@ -50,10 +50,15 @@ public class Producer {
         secondReplicaPendingCommit).start();
   }
 
-  // TODO HOW handle DELETE?
   public void send(byte[] key, byte[] value) throws Exception {
-    byte[] message = ByteBuffer.wrap(new byte[8]).put(key).put(value).array();
-    producerDb.put(Ints.toByteArray(nextOffset), message);
+    ByteBuffer buffer = ByteBuffer.wrap(new byte[8]);
+    if (value != null) {
+      buffer.put(key).put(value);
+    } else {
+      buffer.put(key).put(Constants.Common.DELETE_PAYLOAD);
+    }
+
+    producerDb.put(Ints.toByteArray(nextOffset), buffer.array());
     nextOffset++;
   }
 
@@ -127,7 +132,7 @@ public class Producer {
       OutputStream outputStream = socket.getOutputStream();
 
       int lastCommittedOffset = getLastCommittedOffset(inputStream, outputStream);
-      LOGGER.debug("Last committed offset before synchronization: {} for Replicator: {} in Producer: {}",
+      LOGGER.info("Last committed offset before synchronization: {} for Replicator: {} in Producer: {}",
           lastCommittedOffset, replicatorId, producerId);
 
       int producerLCOffset = Ints.fromByteArray(Util.readFile(Constants.Common.getProducerOffsetFilePath(producerId)));
@@ -136,12 +141,12 @@ public class Producer {
         deleteReplica(inputStream, outputStream);
         taskDb.flush(Constants.Common.FLUSH_OPTIONS);
         writeTaskDb(outputStream); // send everything in task db.
-        lastCommittedOffset = 0; // send everything in producer db.
+        lastCommittedOffset = Integer.MIN_VALUE; // send everything in producer db.
       }
 
       producerDb.flush(Constants.Common.FLUSH_OPTIONS);
       byte[] lastSentOffset = writeSinceOffset(outputStream, Ints.toByteArray(lastCommittedOffset));
-      LOGGER.debug("Last sent offset after synchronization: {} for Replicator: {} in Producer: {}",
+      LOGGER.info("Last sent offset after synchronization: {} for Replicator: {} in Producer: {}",
           Ints.fromByteArray(lastSentOffset), replicatorId, producerId);
 
       while(!Thread.currentThread().isInterrupted()) {
@@ -189,8 +194,9 @@ public class Producer {
         byte[] message = iterator.value();
         byte[] messageKey = new byte[4];
         byte[] messageValue = new byte[4];
-        ByteBuffer.wrap(message).get(messageKey);
-        ByteBuffer.wrap(message).get(messageValue);
+        ByteBuffer wrapper = ByteBuffer.wrap(message);
+        wrapper.get(messageKey);
+        wrapper.get(messageValue);
 
         LOGGER.debug("Sending data for offset: {} key: {} to Replicator: {} from Producer: {}",
             Ints.fromByteArray(storedOffset), Ints.fromByteArray(messageKey), replicatorId, producerId);

@@ -45,10 +45,19 @@ public class Task extends Thread {
         ByteBuffer.wrap(key).putInt(data); // different key pattern per task.
         ByteBuffer.wrap(value).putInt(data);
         taskDb.put(key, value);
-
         producer.send(key, value);
+
+        // delete older messages to keep state size bounded
+        if (messageId > Constants.Task.MAX_NUM_MESSAGES) {
+          int oldMessageId = messageId - Constants.Task.MAX_NUM_MESSAGES;
+          int oldData = oldMessageId * taskId + oldMessageId;
+          byte[] oldKey = Ints.toByteArray(oldData);
+          taskDb.delete(oldKey);
+          producer.send(oldKey, null);
+        }
+
         if (messageId % Constants.Task.COMMIT_INTERVAL == 0) {
-          LOGGER.debug("Requesting Producer commit for messageId: {} in Task: {}.", messageId, taskId);
+          LOGGER.info("Requesting commit for messageId: {} in Task: {}.", messageId, taskId);
           producer.commit();
           taskDb.flush(Constants.Common.FLUSH_OPTIONS);
           Util.writeFile(commitFilePath, Ints.toByteArray(messageId));

@@ -304,7 +304,7 @@ public class Orchestrator {
         Preconditions.checkState(Arrays.equals(taskDbIterator.value(), r0value)); // task and r0 values are equal
         Preconditions.checkState(Arrays.equals(r0value, r1value)); // r0 and r1 values are equal
       } catch (Exception e) {
-        LOGGER.error("Verification error for key: {} for task: {}", intKey, taskId, e);
+        LOGGER.error("Verification error for key: {} for task: {}. Num verified entries: {}", intKey, taskId, verifiedKeys, e);
         throw e;
       }
       verifiedKeys++;

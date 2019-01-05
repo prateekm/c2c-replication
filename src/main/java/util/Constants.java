@@ -12,15 +12,16 @@ import org.rocksdb.Options;
 public class Constants {
   public static class Orchestrator {
     public static final int NUM_PROCESSES = 3;
-    public static int TOTAL_RUNTIME_SECONDS = 300;
-    public static int MAX_RUNTIME_SECONDS = 30;
-    public static int MIN_RUNTIME_SECONDS = 10;
+    public static int TOTAL_RUNTIME_SECONDS = 600;
+    public static int MAX_RUNTIME_SECONDS = 60;
+    public static int MIN_RUNTIME_SECONDS = 30;
     public static int INTERVAL_BETWEEN_RESTART_SECONDS = 5; // required to allow rocksdb locks to be released
   }
 
   public static class Task {
     public static final int COMMIT_INTERVAL = 10000;
-    public static final int TASK_SLEEP_MS = 1;
+    public static final int TASK_SLEEP_MS = 0;
+    public static final int MAX_NUM_MESSAGES = 1000000;
   }
 
   public static class Common {
@@ -43,6 +44,8 @@ public class Constants {
 
     public static final int OPCODE_DELETE_INT = 3;
     public static final byte[] OPCODE_DELETE = Ints.toByteArray(OPCODE_DELETE_INT);
+
+    public static final byte[] DELETE_PAYLOAD = Ints.toByteArray(Integer.MIN_VALUE);
 
     public static final String TASK_STORE_BASE_PATH = "state/stores/task";
     public static final String PRODUCER_STORE_BASE_PATH = "state/stores/producer";
