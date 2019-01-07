@@ -4,6 +4,7 @@ Current modeling restrictions:
 1. Models blocking commit only where commit is exclusive with process.
 2. Assumes replication factor of 3 (including the original copy).
 3. Blocks commit until both Replicators are fully replicated. No "min available replicas".
+4. Hardcodes ports for the Replicators. Can only run one Orchestrator instance per machine.
 
 How it works:
 First runs all 3 containers without host affinity. Randomly simulates one of the following scenarios at
