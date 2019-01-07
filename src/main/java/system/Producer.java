@@ -83,7 +83,7 @@ public class Producer {
     byte[] dbKey = iterator.key();
     LOGGER.info("Trimming producerDb from oldest offset: {} to committed offset: {} in Producer: {}",
         Longs.fromByteArray(dbKey), commitOffset, producerId);
-    producerDb.deleteRange(dbKey, Longs.toByteArray(commitOffset + 1)); // should be inclusive of committed offset
+    producerDb.deleteRange(dbKey, Longs.toByteArray(commitOffset)); // TODO: should be inclusive of committed offset
     iterator.close();
   }
 
