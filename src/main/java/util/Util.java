@@ -32,21 +32,21 @@ public class Util {
     jmxReporter.start();
   }
 
-  public static byte[] readFile(Path filePath) {
+  public static long readFile(Path filePath) {
     try {
       return Files.isReadable(filePath)
-          ? Files.readAllBytes(filePath)
-          : Longs.toByteArray(1);
-    } catch (IOException e) {
-      return Longs.toByteArray(1);
+          ? Longs.fromByteArray(Files.readAllBytes(filePath))
+          : 0L;
+    } catch (IOException | IllegalArgumentException e) {
+      return 0L;
     }
   }
 
-  public static void writeFile(Path filePath, byte[] content) throws Exception {
+  public static void writeFile(Path filePath, long content) throws Exception {
     Files.createDirectories(filePath.getParent());
     Files.write(
         filePath,
-        content,
+        Longs.toByteArray(content),
         StandardOpenOption.CREATE,
         StandardOpenOption.TRUNCATE_EXISTING,
         StandardOpenOption.WRITE,

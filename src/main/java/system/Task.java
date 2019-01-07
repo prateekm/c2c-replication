@@ -27,7 +27,7 @@ public class Task extends Thread {
     this.commitFilePath = Constants.Common.getTaskOffsetFilePath(taskId);
 
     // contains the last committed messageId (not offset)
-    this.messageId = Longs.fromByteArray(Util.readFile(commitFilePath)) + 1;
+    this.messageId = Util.readFile(commitFilePath) + 1;
     LOGGER.info("Restoring messageId to: {} for Task: {}", messageId, taskId);
   }
 
@@ -61,7 +61,7 @@ public class Task extends Thread {
           LOGGER.info("Requesting commit for messageId: {} in Task: {}.", messageId, taskId);
           producer.commit();
           taskDb.flush(Constants.Common.FLUSH_OPTIONS);
-          Util.writeFile(commitFilePath, Longs.toByteArray(messageId));
+          Util.writeFile(commitFilePath, messageId);
         }
         messageId++;
       }

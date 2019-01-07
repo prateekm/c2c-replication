@@ -304,10 +304,9 @@ public class Orchestrator {
     RocksIterator taskDbIterator = taskDb.newIterator();
     taskDbIterator.seekToFirst();
 
-    byte[] lastCommittedMessageId = Util.readFile(Constants.Common.getTaskOffsetFilePath(taskId));
-    long messageId = Longs.fromByteArray(lastCommittedMessageId);
-    LOGGER.info("Last committed message id: {} for task: {}", messageId, taskId);
-    long maxValidKey = messageId * taskId + messageId;
+    long lastCommittedMessageId = Util.readFile(Constants.Common.getTaskOffsetFilePath(taskId));
+    LOGGER.info("Last committed message id: {} for task: {}", lastCommittedMessageId, taskId);
+    long maxValidKey = lastCommittedMessageId * taskId + lastCommittedMessageId;
 
     int verifiedKeys = 0;
     for(; taskDbIterator.isValid(); taskDbIterator.next()) {

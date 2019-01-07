@@ -34,7 +34,7 @@ public class Producer {
     this.producerId = producerId;
     this.producerDb = producerDb;
     this.taskDb = taskDb;
-    this.nextOffset = Longs.fromByteArray(Util.readFile(Constants.Common.getProducerOffsetFilePath(producerId))) + 1;
+    this.nextOffset = Util.readFile(Constants.Common.getProducerOffsetFilePath(producerId)) + 1;
     LOGGER.info("Restoring next offset to: {} for Producer: {}", nextOffset, producerId);
   }
 
@@ -71,7 +71,7 @@ public class Producer {
     }
 
     // may be less than the offset actually committed at the replicator
-    Util.writeFile(Constants.Common.getProducerOffsetFilePath(producerId), Longs.toByteArray(commitOffset));
+    Util.writeFile(Constants.Common.getProducerOffsetFilePath(producerId), commitOffset);
 
     // clean up data up to committed offset
     RocksIterator iterator = producerDb.newIterator();
@@ -110,8 +110,8 @@ public class Producer {
         while (!socket.isConnected()) {
           try {
             // read the replica port from file every time.
-            int replicaPort = Ints.fromByteArray(Util.readFile(Constants.Common.getReplicatorPortPath(replicatorId)));
-            socket.connect(new InetSocketAddress(Constants.Common.SERVER_HOST, replicaPort), 0);
+            long replicaPort = Util.readFile(Constants.Common.getReplicatorPortPath(replicatorId));
+            socket.connect(new InetSocketAddress(Constants.Common.SERVER_HOST, (int) replicaPort), 0);
             LOGGER.info("Connected to Replicator: {} at Port: {} in Producer: {}", replicatorId, replicaPort, producerId);
             replicate(socket); // blocks
           } catch (Exception ce) {
@@ -133,7 +133,7 @@ public class Producer {
       LOGGER.info("Last committed offset before synchronization: {} for Replicator: {} in Producer: {}",
           lastCommittedOffset, replicatorId, producerId);
 
-      long producerLCOffset = Longs.fromByteArray(Util.readFile(Constants.Common.getProducerOffsetFilePath(producerId)));
+      long producerLCOffset = Util.readFile(Constants.Common.getProducerOffsetFilePath(producerId));
       if (lastCommittedOffset < producerLCOffset) {
         LOGGER.info("Replica: {} LCO: {} was less than producer LCO: {}", replicatorId, lastCommittedOffset, producerLCOffset);
         deleteReplica(inputStream, outputStream);

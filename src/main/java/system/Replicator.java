@@ -34,7 +34,7 @@ public class Replicator extends Thread {
     ConnectionHandler connectionHandler = null;
     try (ServerSocket serverSocket = new ServerSocket()) {
       serverSocket.bind(null);
-      byte[] replicatorPort = Ints.toByteArray(serverSocket.getLocalPort());
+      int replicatorPort = serverSocket.getLocalPort();
       Util.writeFile(Constants.Common.getReplicatorPortPath(replicatorId), replicatorPort);
 
       while (!Thread.currentThread().isInterrupted()) {
@@ -110,10 +110,10 @@ public class Replicator extends Thread {
     private void handleLCO(OutputStream outputStream) throws IOException {
       ByteBuffer response = ByteBuffer.allocate(4 + 8);
       LOGGER.debug("Received sync request in Replicator: {}", replicatorId);
-      byte[] offset = Util.readFile(offsetFilePath);
-      LOGGER.debug("Requesting sync from offset: {} in Replicator: {}", Longs.fromByteArray(offset), replicatorId);
+      long offset = Util.readFile(offsetFilePath);
+      LOGGER.debug("Requesting sync from offset: {} in Replicator: {}", offset, replicatorId);
       response.putInt(Constants.Common.OPCODE_LCO_INT);
-      response.put(offset);
+      response.putLong(offset);
       response.flip();
       outputStream.write(response.array());
       outputStream.flush();
@@ -140,7 +140,7 @@ public class Replicator extends Thread {
       LOGGER.info("Received commit request for offset: {} in Replicator: {}", Longs.fromByteArray(offset), replicatorId);
 
       replicatorDb.flush(Constants.Common.FLUSH_OPTIONS);
-      Util.writeFile(offsetFilePath, offset);
+      Util.writeFile(offsetFilePath, Longs.fromByteArray(offset));
       LOGGER.info("Acknowledging commit request for offset: {} in Replicator: {}", Longs.fromByteArray(offset), replicatorId);
       ByteBuffer response = ByteBuffer.allocate(4 + 8);
       response.putInt(Constants.Common.OPCODE_COMMIT_INT);
