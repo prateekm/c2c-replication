@@ -41,14 +41,10 @@ public class Producer {
   public void start() {
     LOGGER.info("Producer: {} is now running.", producerId);
     String firstReplicaId = producerId + "0";
-    Integer firstReplicaPort = Constants.Common.JOB_MODEL.getReplicators().get(firstReplicaId).right;
-    new ReplicaConnection(producerId, firstReplicaId, firstReplicaPort, producerDb, taskDb,
-        firstReplicaPendingCommit).start();
+    new ReplicaConnection(producerId, firstReplicaId, producerDb, taskDb, firstReplicaPendingCommit).start();
 
     String secondReplicaId = producerId + "1";
-    Integer secondReplicaPort = Constants.Common.JOB_MODEL.getReplicators().get(secondReplicaId).right;
-    new ReplicaConnection(producerId, secondReplicaId, secondReplicaPort, producerDb, taskDb,
-        secondReplicaPendingCommit).start();
+    new ReplicaConnection(producerId, secondReplicaId, producerDb, taskDb, secondReplicaPendingCommit).start();
   }
 
   public void send(byte[] key, byte[] value) throws Exception {
@@ -91,17 +87,15 @@ public class Producer {
     private static final Logger LOGGER = LoggerFactory.getLogger(ReplicaConnection.class);
     private final Integer producerId;
     private final String replicatorId;
-    private final Integer replicaPort;
     private final RocksDB producerDb;
     private final RocksDB taskDb;
     private final AtomicInteger pendingCommit;
 
-    public ReplicaConnection(Integer producerId, String replicatorId, Integer replicaPort,
+    public ReplicaConnection(Integer producerId, String replicatorId,
         RocksDB producerDb, RocksDB taskDb, AtomicInteger pendingCommit) {
       super("ReplicaConnection " + replicatorId);
       this.producerId = producerId;
       this.replicatorId = replicatorId;
-      this.replicaPort = replicaPort;
       this.producerDb = producerDb;
       this.taskDb = taskDb;
       this.pendingCommit = pendingCommit;
@@ -115,8 +109,10 @@ public class Producer {
 
         while (!socket.isConnected()) {
           try {
+            // read the replica port from file every time.
+            int replicaPort = Ints.fromByteArray(Util.readFile(Constants.Common.getReplicatorPortPath(replicatorId)));
             socket.connect(new InetSocketAddress(Constants.Common.SERVER_HOST, replicaPort), 0);
-            LOGGER.info("Connected to Replicator: {} in Producer: {}", replicatorId, producerId);
+            LOGGER.info("Connected to Replicator: {} at Port: {} in Producer: {}", replicatorId, replicaPort, producerId);
             replicate(socket); // blocks
           } catch (Exception ce) {
             LOGGER.debug("Retrying connection to Replicator: {} in Producer: {}", replicatorId, producerId);

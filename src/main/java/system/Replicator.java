@@ -24,17 +24,19 @@ import org.slf4j.LoggerFactory;
 public class Replicator extends Thread {
   private static final Logger LOGGER = LoggerFactory.getLogger(Replicator.class);
   private final String replicatorId;
-  private final Integer replicatorPort;
 
-  public Replicator(String replicatorId, Integer replicatorPort) {
+  public Replicator(String replicatorId) {
     this.replicatorId = replicatorId;
-    this.replicatorPort = replicatorPort;
   }
 
   public void run() {
     LOGGER.info("Replicator: {} is now running.", replicatorId);
     ConnectionHandler connectionHandler = null;
-    try (ServerSocket serverSocket = new ServerSocket(replicatorPort)) {
+    try (ServerSocket serverSocket = new ServerSocket()) {
+      serverSocket.bind(null);
+      byte[] replicatorPort = Ints.toByteArray(serverSocket.getLocalPort());
+      Util.writeFile(Constants.Common.getReplicatorPortPath(replicatorId), replicatorPort);
+
       while (!Thread.currentThread().isInterrupted()) {
         Socket socket = serverSocket.accept();
         connectionHandler = new ConnectionHandler(replicatorId, socket);
@@ -154,7 +156,7 @@ public class Replicator extends Thread {
       if (replicatorDb.isOwningHandle()) replicatorDb.close();
       try {
         Files.deleteIfExists(Constants.Common.getReplicatorOffsetFilePath(replicatorId));
-        Util.rmrf(Constants.Common.REPLICATOR_STORE_BASE_PATH + "/" + replicatorId);
+        Util.rmrf(Constants.Common.getReplicatorStoreBasePath() + "/" + replicatorId);
       } catch (Exception e) {
         LOGGER.warn("Error handling replicator delete. Continuing.", e);
       }
@@ -170,7 +172,7 @@ public class Replicator extends Thread {
     }
 
     private static RocksDB createReplicatorDb(String replicatorId) throws Exception {
-      return RocksDB.open(Constants.Common.DB_OPTIONS, Constants.Common.REPLICATOR_STORE_BASE_PATH + "/" + replicatorId);
+      return RocksDB.open(Constants.Common.DB_OPTIONS, Constants.Common.getReplicatorStoreBasePath() + "/" + replicatorId);
     }
   }
 }

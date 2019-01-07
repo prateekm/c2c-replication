@@ -1,5 +1,7 @@
 package system;
 
+import joptsimple.OptionParser;
+import joptsimple.OptionSet;
 import util.Constants;
 import util.Pair;
 
@@ -34,9 +36,11 @@ public class Container {
       System.exit(1);
     });
 
-    Files.createDirectories(Paths.get(Constants.Common.TASK_STORE_BASE_PATH));
-    Files.createDirectories(Paths.get(Constants.Common.PRODUCER_STORE_BASE_PATH));
-    Files.createDirectories(Paths.get(Constants.Common.REPLICATOR_STORE_BASE_PATH));
+    setConfiguration(args);
+
+    Files.createDirectories(Paths.get(Constants.Common.getTaskStoreBasePath()));
+    Files.createDirectories(Paths.get(Constants.Common.getProducerStoreBasePath()));
+    Files.createDirectories(Paths.get(Constants.Common.getReplicatorStoreBasePath()));
 
     int containerId = Integer.valueOf(args[0]);
     ContainerModel containerModel = Constants.Common.JOB_MODEL.getContainerModel(containerId);
@@ -45,8 +49,8 @@ public class Container {
 
     try {
       RocksDB.loadLibrary();
-      RocksDB taskDb = RocksDB.open(Constants.Common.DB_OPTIONS, Constants.Common.TASK_STORE_BASE_PATH + "/" + taskId);
-      RocksDB producerDb = RocksDB.open(Constants.Common.DB_OPTIONS, Constants.Common.PRODUCER_STORE_BASE_PATH + "/" + taskId);
+      RocksDB taskDb = RocksDB.open(Constants.Common.DB_OPTIONS, Constants.Common.getTaskStoreBasePath() + "/" + taskId);
+      RocksDB producerDb = RocksDB.open(Constants.Common.DB_OPTIONS, Constants.Common.getProducerStoreBasePath() + "/" + taskId);
 
       Producer producer = new Producer(taskId, producerDb, taskDb); // producer id == task id
       Task task = new Task(taskId, taskDb, producer);
@@ -55,8 +59,7 @@ public class Container {
       for (Map.Entry<String, Pair<Integer, Integer>> entry: Constants.Common.JOB_MODEL.getReplicators().entrySet()) {
         if (entry.getValue().left.equals(taskId)) {
           String replicatorId = entry.getKey();
-          Integer replicatorPort = entry.getValue().right;
-          Replicator replicator = new Replicator(replicatorId, replicatorPort);
+          Replicator replicator = new Replicator(replicatorId);
           replicators.add(replicator);
         }
       }
@@ -64,6 +67,16 @@ public class Container {
       container.start();
     } catch (Exception e) {
       LOGGER.error("Error starting container. Prematurely exiting process.", e);
+    }
+  }
+
+  public static void setConfiguration(String[] args) {
+    OptionParser parser = new OptionParser();
+    parser.accepts("execution-id").withOptionalArg().ofType(Integer.class);
+
+    OptionSet options = parser.parse(args);
+    if (options.hasArgument("execution-id")) {
+      Constants.Common.EXECUTION_ID = (int) options.valueOf("execution-id");
     }
   }
 

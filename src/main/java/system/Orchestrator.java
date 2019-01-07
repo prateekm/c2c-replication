@@ -52,6 +52,7 @@ public class Orchestrator {
 
   private static void setConfiguration(String[] args) {
     OptionParser parser = new OptionParser();
+    parser.accepts("execution-id").withOptionalArg().ofType(Integer.class);
     parser.accepts("iterations").withOptionalArg().ofType(Integer.class);
     parser.accepts("total-runtime").withOptionalArg().ofType(Integer.class);
     parser.accepts("max-runtime").withOptionalArg().ofType(Integer.class);
@@ -59,6 +60,9 @@ public class Orchestrator {
     parser.accepts("interval").withOptionalArg().ofType(Integer.class);
 
     OptionSet options = parser.parse(args);
+    if (options.hasArgument("execution-id")) {
+      Constants.Common.EXECUTION_ID = (int) options.valueOf("execution-id");
+    }
     if (options.hasArgument("iterations")) {
       Constants.Orchestrator.NUM_ITERATIONS = (int) options.valueOf("iterations");
     }
@@ -75,7 +79,8 @@ public class Orchestrator {
       Constants.Orchestrator.INTERVAL_BETWEEN_RESTART_SECONDS = (int) options.valueOf("interval");
     }
 
-    LOGGER.info("Configuration: \nTotal Runtime: {} \nMax Runtime: {} \nMin Runtime: {} \nInterval Between Restarts: {}",
+    LOGGER.info("Configuration: \nExecution ID: {} \nTotal Runtime: {} \nMax Runtime: {} \nMin Runtime: {} \nInterval: {}",
+        Constants.Common.EXECUTION_ID,
         Constants.Orchestrator.TOTAL_RUNTIME_SECONDS, Constants.Orchestrator.MAX_RUNTIME_SECONDS,
         Constants.Orchestrator.MIN_RUNTIME_SECONDS, Constants.Orchestrator.INTERVAL_BETWEEN_RESTART_SECONDS
     );
@@ -98,7 +103,7 @@ public class Orchestrator {
                       Constants.Orchestrator.MIN_RUNTIME_SECONDS)), remainingTimeInSeconds) + 1;
               if (runtimeInSeconds <= 0) throw new RuntimeException();
               LOGGER.info("Starting process " + id + " with runtime " + runtimeInSeconds);
-              new ProcessExecutor().command((CMD + " " + id).split("\\s+")) // args must be provided separately from cmd
+              new ProcessExecutor().command((getCmd(id)).split("\\s+")) // args must be provided separately from cmd
                   .redirectOutput(Slf4jStream.of("Container " + id).asInfo())
                   .timeout(runtimeInSeconds, TimeUnit.SECONDS) // random timeout for force kill, must be > 0
                   .destroyOnExit()
@@ -219,7 +224,7 @@ public class Orchestrator {
   private static void startProcess(StartedProcess[] processes, int id) throws IOException {
     LOGGER.debug("Starting process: {}", id);
     StartedProcess startedProcess = new ProcessExecutor()
-        .command((CMD + " " + id).split("\\s+")) // args must be provided separately from cmd
+        .command((getCmd(id)).split("\\s+")) // args must be provided separately from cmd
         .redirectOutput(Slf4jStream.of("Container " + id).asInfo())
         .destroyOnExit()
         .start();
@@ -240,13 +245,13 @@ public class Orchestrator {
 
   private static void clearProducerState(int id) throws IOException {
     LOGGER.debug("Clearing state for producer: {}", id);
-    String producerStoreDir = Constants.Common.PRODUCER_STORE_BASE_PATH + "/" + id;
+    String producerStoreDir = Constants.Common.getProducerStoreBasePath() + "/" + id;
     Util.rmrf(producerStoreDir);
   }
 
   private static void clearReplicatorState(String rid) throws IOException {
     LOGGER.debug("Clearing state for replicator: {}", rid);
-    String replicatorStoreDir = Constants.Common.REPLICATOR_STORE_BASE_PATH + "/" + rid;
+    String replicatorStoreDir = Constants.Common.getReplicatorStoreBasePath() + "/" + rid;
     try {
       Util.rmrf(replicatorStoreDir);
       Files.deleteIfExists(Constants.Common.getReplicatorOffsetFilePath(rid));
@@ -293,9 +298,9 @@ public class Orchestrator {
 
   private static void verifyState(int taskId) throws RocksDBException {
     Options dbOptions = new Options().setCreateIfMissing(true);
-    RocksDB taskDb = RocksDB.open(dbOptions, Constants.Common.TASK_STORE_BASE_PATH + "/" + taskId);
-    RocksDB replicator0Db = RocksDB.open(dbOptions, Constants.Common.REPLICATOR_STORE_BASE_PATH + "/" + taskId + "0");
-    RocksDB replicator1Db = RocksDB.open(dbOptions, Constants.Common.REPLICATOR_STORE_BASE_PATH + "/" + taskId + "1");
+    RocksDB taskDb = RocksDB.open(dbOptions, Constants.Common.getTaskStoreBasePath() + "/" + taskId);
+    RocksDB replicator0Db = RocksDB.open(dbOptions, Constants.Common.getReplicatorStoreBasePath() + "/" + taskId + "0");
+    RocksDB replicator1Db = RocksDB.open(dbOptions, Constants.Common.getReplicatorStoreBasePath() + "/" + taskId + "1");
     RocksIterator taskDbIterator = taskDb.newIterator();
     taskDbIterator.seekToFirst();
 
@@ -331,5 +336,8 @@ public class Orchestrator {
   }
 
   // NOTE: If running from IDE, must gradle build first
-  private static final String CMD = "java -Dfile.encoding=UTF-8 -classpath build/libs/c2c-replication-0.1.jar system.Container";
+  private static String getCmd(int containerId) {
+    return "java -Dfile.encoding=UTF-8 -classpath build/libs/c2c-replication-0.1.jar system.Container " + containerId +
+        " --execution-id " + Constants.Common.EXECUTION_ID;
+  }
 }

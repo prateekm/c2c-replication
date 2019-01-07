@@ -27,6 +27,8 @@ public class Constants {
   }
 
   public static class Common {
+    public static int EXECUTION_ID = 0;
+
     public static final Random RANDOM = new Random();
     public static final JobModel JOB_MODEL = new JobModel();
 
@@ -49,21 +51,39 @@ public class Constants {
 
     public static final byte[] DELETE_PAYLOAD = Longs.toByteArray(Integer.MIN_VALUE);
 
-    public static final String TASK_STORE_BASE_PATH = "state/stores/task";
-    public static final String PRODUCER_STORE_BASE_PATH = "state/stores/producer";
-    public static final String REPLICATOR_STORE_BASE_PATH = "state/stores/replicator";
-    private static final String COMMITTED_OFFSETS_BASE_PATH = "state/offsets";
+    private static final String STATE_BASE_PATH = "state";
+    private static final String TASK_STORE_BASE_PATH = "stores/task";
+    private static final String PRODUCER_STORE_BASE_PATH = "stores/producer";
+    private static final String REPLICATOR_STORE_BASE_PATH = "stores/replicator";
+    private static final String COMMITTED_OFFSETS_BASE_PATH = "offsets";
+    private static final String REPLICATOR_PORTS_BASE_PATH = "ports";
+
+    public static String getTaskStoreBasePath() {
+      return STATE_BASE_PATH + "/" + EXECUTION_ID + "/" + TASK_STORE_BASE_PATH;
+    }
+
+    public static String getProducerStoreBasePath() {
+      return STATE_BASE_PATH + "/" + EXECUTION_ID + "/" + PRODUCER_STORE_BASE_PATH;
+    }
+
+    public static String getReplicatorStoreBasePath() {
+      return STATE_BASE_PATH + "/" + EXECUTION_ID + "/" + REPLICATOR_STORE_BASE_PATH;
+    }
 
     public static Path getTaskOffsetFilePath(int taskId) {
-      return Paths.get(COMMITTED_OFFSETS_BASE_PATH + "/task-" + taskId + "/MESSAGE_ID");
+      return Paths.get(STATE_BASE_PATH + "/" + EXECUTION_ID + "/" + COMMITTED_OFFSETS_BASE_PATH + "/task/" + taskId + "/MESSAGE_ID");
     }
 
     public static Path getProducerOffsetFilePath(int producerId) {
-      return Paths.get(COMMITTED_OFFSETS_BASE_PATH + "/producer-" + producerId + "/OFFSET");
+      return Paths.get(STATE_BASE_PATH + "/" + EXECUTION_ID + "/" + COMMITTED_OFFSETS_BASE_PATH + "/producer/" + producerId + "/OFFSET");
     }
 
     public static Path getReplicatorOffsetFilePath(String replicatorId) {
-      return Paths.get(COMMITTED_OFFSETS_BASE_PATH + "/replicator-" + replicatorId + "/OFFSET");
+      return Paths.get(STATE_BASE_PATH + "/" + EXECUTION_ID + "/" + COMMITTED_OFFSETS_BASE_PATH + "/replicator/" + replicatorId + "/OFFSET");
+    }
+
+    public static Path getReplicatorPortPath(String replicatorId) {
+      return Paths.get(STATE_BASE_PATH + "/" + EXECUTION_ID + "/" + REPLICATOR_PORTS_BASE_PATH + "/replicator/" + replicatorId + "/PORT");
     }
   }
 }
