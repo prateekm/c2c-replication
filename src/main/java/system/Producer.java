@@ -34,7 +34,7 @@ public class Producer {
     this.producerId = producerId;
     this.producerDb = producerDb;
     this.taskDb = taskDb;
-    this.nextOffset = Longs.fromByteArray(Util.readFile(Constants.Common.getProducerOffsetFilePath(producerId)));
+    this.nextOffset = Longs.fromByteArray(Util.readFile(Constants.Common.getProducerOffsetFilePath(producerId))) + 1;
     LOGGER.info("Restoring next offset to: {} for Producer: {}", nextOffset, producerId);
   }
 
@@ -83,7 +83,7 @@ public class Producer {
     byte[] dbKey = iterator.key();
     LOGGER.info("Trimming producerDb from oldest offset: {} to committed offset: {} in Producer: {}",
         Longs.fromByteArray(dbKey), commitOffset, producerId);
-    producerDb.deleteRange(dbKey, Longs.toByteArray(commitOffset)); // TODO: should be inclusive of committed offset
+    producerDb.deleteRange(dbKey, Longs.toByteArray(commitOffset)); // should be inclusive of committed offset
     iterator.close();
   }
 

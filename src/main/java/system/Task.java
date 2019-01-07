@@ -27,7 +27,8 @@ public class Task extends Thread {
     this.commitFilePath = Constants.Common.getTaskOffsetFilePath(taskId);
 
     // contains the last committed messageId (not offset)
-    this.messageId = Longs.fromByteArray(Util.readFile(commitFilePath));
+    this.messageId = Longs.fromByteArray(Util.readFile(commitFilePath)) + 1;
+    LOGGER.info("Restoring messageId to: {} for Task: {}", messageId, taskId);
   }
 
   public void run() {
